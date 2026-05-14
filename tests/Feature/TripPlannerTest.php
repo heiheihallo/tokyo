@@ -220,6 +220,49 @@ test('reference import creates typed day slots and preserves edited slots', func
     expect($slot->fresh()->title)->toBe('Edited slot title');
 });
 
+test('day planning backfill fills only missing slot helpers and creates specific tasks', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $day = DayNode::query()
+        ->where('stable_key', 'day-6')
+        ->whereHas('variant', fn ($query) => $query->where('slug', 'value-copenhagen-stopover'))
+        ->firstOrFail();
+
+    $moveSlot = $day->itineraryItems()->create([
+        'trip_id' => $day->trip_id,
+        'trip_variant_id' => $day->trip_variant_id,
+        'stable_key' => 'missing-move-helper-data',
+        'item_type' => 'move',
+        'title' => 'Move to Toyosu',
+        'location_label' => 'Toyosu',
+        'is_public' => true,
+        'sort_order' => 600,
+        'details' => [],
+    ]);
+
+    $editedSlot = $day->itineraryItems()->where('item_type', 'activity')->firstOrFail();
+    $editedSlot->update([
+        'time_label' => 'edited custom label',
+        'latitude' => 1.2345678,
+        'longitude' => 2.3456789,
+    ]);
+
+    Artisan::call('trip:backfill-day-planning');
+
+    expect($moveSlot->fresh())
+        ->time_label->toBe('move first')
+        ->latitude->not->toBeNull()
+        ->longitude->not->toBeNull();
+
+    expect($editedSlot->fresh())
+        ->time_label->toBe('edited custom label')
+        ->latitude->toBe('1.2345678')
+        ->longitude->toBe('2.3456789');
+
+    expect($day->tasks()->where('stable_key', 'confirm-movement-anchor')->exists())->toBeTrue();
+    expect($day->tasks()->where('stable_key', 'check-activity-booking-needs')->exists())->toBeTrue();
+});
+
 test('public day show page renders public slots and hides private planning tasks', function () {
     Artisan::call('trip:import-japan-reference');
 
