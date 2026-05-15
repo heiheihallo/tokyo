@@ -71,7 +71,7 @@ use Laravel\Mcp\Server\Attributes\Version;
 #[Instructions('Use this server to inspect and organize the Tokyo Trip Planner. Read-only and non-destructive write tools are safe to call directly, including asset enrichment, price updates, media additions, ordering, attachments, and planning metadata updates. Destructive tools that delete records, remove media, detach existing links, overwrite reference data, or otherwise remove existing planning data preview by default and must be re-run with dry_run=false, confirm=true, and a valid preview_token before they mutate data.')]
 class TripPlannerServer extends Server
 {
-    public int $defaultPaginationLength = 30;
+    public int $defaultPaginationLength = 100;
 
     protected array $tools = [
         ListTripsTool::class,
