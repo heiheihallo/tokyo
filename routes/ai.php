@@ -6,4 +6,4 @@ use Laravel\Mcp\Facades\Mcp;
 Mcp::local('trip-planner', TripPlannerServer::class);
 
 Mcp::web('/mcp/trip-planner', TripPlannerServer::class)
-    ->middleware(['mcp.bearer', 'throttle:30,1']);
+    ->middleware(['mcp.bearer', 'throttle:3000,1']);
