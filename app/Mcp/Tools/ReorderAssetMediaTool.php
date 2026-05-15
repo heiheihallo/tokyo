@@ -15,7 +15,7 @@ use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
 
 #[Name('reorder-asset-media')]
-#[Description('Reorder media items for a shared asset collection after preview and confirmation.')]
+#[Description('Reorder media items directly for a shared asset collection.')]
 #[IsDestructive(false)]
 class ReorderAssetMediaTool extends Tool
 {
@@ -77,9 +77,7 @@ class ReorderAssetMediaTool extends Tool
             'stable_key' => $schema->string()->description('Optional asset stable key.'),
             'collection' => $schema->string()->description('main_image or images.')->required(),
             'media_ids' => $schema->array()->description('Ordered media ids.')->required(),
-            'dry_run' => $schema->boolean()->description('Defaults to true. Must be false to write.'),
-            'confirm' => $schema->boolean()->description('Defaults to false. Must be true.'),
-            'preview_token' => $schema->string()->description('Token from a prior preview response.'),
+            'dry_run' => $schema->boolean()->description('Optional. When true, previews the media reorder without writing.'),
         ];
     }
 }

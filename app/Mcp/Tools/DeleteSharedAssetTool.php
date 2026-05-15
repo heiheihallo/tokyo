@@ -52,6 +52,7 @@ class DeleteSharedAssetTool extends Tool
                 'stable_key' => $asset->stable_key,
             ]],
             risk: 'high',
+            requiresConfirmation: true,
         );
 
         return $guard->handle($request, $preview, function () use ($asset): array {

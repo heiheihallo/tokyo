@@ -15,7 +15,7 @@ use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
 
 #[Name('add-asset-media-from-url')]
-#[Description('Add an image URL to a shared asset media collection after preview and confirmation.')]
+#[Description('Add an image URL directly to a shared asset media collection.')]
 #[IsDestructive(false)]
 class AddAssetMediaFromUrlTool extends Tool
 {
@@ -83,9 +83,7 @@ class AddAssetMediaFromUrlTool extends Tool
             'name' => $schema->string()->description('Optional media name.'),
             'source_url' => $schema->string()->description('Optional page/source URL.'),
             'attribution' => $schema->string()->description('Optional attribution.'),
-            'dry_run' => $schema->boolean()->description('Defaults to true. Must be false to write.'),
-            'confirm' => $schema->boolean()->description('Defaults to false. Must be true.'),
-            'preview_token' => $schema->string()->description('Token from a prior preview response.'),
+            'dry_run' => $schema->boolean()->description('Optional. When true, previews the media addition without writing.'),
         ];
     }
 }

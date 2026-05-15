@@ -16,7 +16,7 @@ use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
 
 #[Name('update-shared-asset')]
-#[Description('Update selected shared asset fields, including coordinates, notes, reservation URL, and price ranges, after preview and confirmation.')]
+#[Description('Update selected shared asset fields directly, including coordinates, notes, reservation URL, and price ranges.')]
 #[IsDestructive(false)]
 class UpdateSharedAssetTool extends Tool
 {
@@ -110,9 +110,7 @@ class UpdateSharedAssetTool extends Tool
             'price_max_jpy' => $schema->integer()->description('Optional maximum JPY price.'),
             'price_basis' => $schema->string()->description('per_night, per_person, per_ticket, per_meal, per_leg, per_group, free, or unknown.'),
             'price_notes' => $schema->string()->description('Optional price notes or JSON fare metadata.'),
-            'dry_run' => $schema->boolean()->description('Defaults to true. Must be false to write.'),
-            'confirm' => $schema->boolean()->description('Defaults to false. Must be true to write.'),
-            'preview_token' => $schema->string()->description('Token from a prior preview response.'),
+            'dry_run' => $schema->boolean()->description('Optional. When true, previews the update without writing.'),
         ];
     }
 }

@@ -13,9 +13,8 @@ use App\Mcp\Tools\UpdateSharedAssetTool;
 use App\Models\Accommodation;
 use App\Models\TransportLeg;
 use Illuminate\Support\Facades\Artisan;
-use Laravel\Mcp\Server\Testing\TestResponse;
 
-test('shared asset tools expose and update asset enrichment through guarded previews', function () {
+test('shared asset tools expose and update asset enrichment directly', function () {
     Artisan::call('trip:import-japan-reference');
 
     $asset = Accommodation::query()->where('stable_key', 'mets-akihabara')->firstOrFail();
@@ -28,20 +27,6 @@ test('shared asset tools expose and update asset enrichment through guarded prev
         ->assertSee('JR East Hotel Mets Premier Akihabara')
         ->assertSee('main_image');
 
-    $preview = TripPlannerServer::tool(UpdateSharedAssetTool::class, [
-        'type' => 'accommodation',
-        'asset_id' => $asset->id,
-        'price_min_nok' => 1200,
-        'price_max_nok' => 1800,
-        'price_min_jpy' => 17000,
-        'price_max_jpy' => 26000,
-        'price_basis' => 'per_night',
-    ]);
-
-    expect($asset->fresh()->price_min_nok)->toBeNull();
-
-    $token = assetToolStructuredContent($preview)['preview']['preview_token'];
-
     TripPlannerServer::tool(UpdateSharedAssetTool::class, [
         'type' => 'accommodation',
         'asset_id' => $asset->id,
@@ -50,9 +35,6 @@ test('shared asset tools expose and update asset enrichment through guarded prev
         'price_min_jpy' => 17000,
         'price_max_jpy' => 26000,
         'price_basis' => 'per_night',
-        'dry_run' => false,
-        'confirm' => true,
-        'preview_token' => $token,
     ])
         ->assertOk()
         ->assertStructuredContent(fn ($json) => $json->where('status', 'executed')->etc());
@@ -75,21 +57,6 @@ test('flight price tools record observed fares and include them in cost estimate
         ->assertOk()
         ->assertSee('Google Flights search');
 
-    $preview = TripPlannerServer::tool(RecordFlightPriceTool::class, [
-        'transport_leg_id' => $leg->id,
-        'price_min_nok' => 6200,
-        'price_max_nok' => 8200,
-        'price_min_jpy' => 88000,
-        'price_max_jpy' => 116000,
-        'price_basis' => 'per_person',
-        'source_url' => 'https://example.test/flights/cph-hnd',
-        'observed_at' => now()->toDateString(),
-        'carrier' => 'SAS',
-        'passengers' => 2,
-    ]);
-
-    $token = assetToolStructuredContent($preview)['preview']['preview_token'];
-
     TripPlannerServer::tool(RecordFlightPriceTool::class, [
         'transport_leg_id' => $leg->id,
         'price_min_nok' => 6200,
@@ -101,9 +68,6 @@ test('flight price tools record observed fares and include them in cost estimate
         'observed_at' => now()->toDateString(),
         'carrier' => 'SAS',
         'passengers' => 2,
-        'dry_run' => false,
-        'confirm' => true,
-        'preview_token' => $token,
     ])->assertOk();
 
     TripPlannerServer::tool(ListFlightPriceGapsTool::class)
@@ -158,14 +122,3 @@ test('used shared asset deletion is blocked with usage details', function () {
             ->where('asset_id', $asset->id)
             ->etc());
 });
-
-/**
- * @return array<string, mixed>
- */
-function assetToolStructuredContent(TestResponse $response): array
-{
-    $property = new ReflectionProperty($response, 'response');
-    $property->setAccessible(true);
-
-    return $property->getValue($response)->toArray()['result']['structuredContent'];
-}

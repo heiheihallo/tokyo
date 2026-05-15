@@ -45,6 +45,7 @@ class SetAssetMainImageTool extends Tool
                 'asset_id' => $asset->id,
             ]],
             risk: 'low',
+            requiresConfirmation: true,
         );
 
         return $guard->handle($request, $preview, function () use ($asset, $media, $data): array {

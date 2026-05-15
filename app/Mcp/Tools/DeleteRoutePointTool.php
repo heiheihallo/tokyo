@@ -34,6 +34,7 @@ class DeleteRoutePointTool extends Tool
             summary: 'Delete route point '.$point->name.'.',
             changes: [['operation' => 'delete', 'model' => RoutePoint::class, 'id' => $point->id]],
             risk: 'high',
+            requiresConfirmation: true,
         );
 
         return $guard->handle($request, $preview, function () use ($point): array {
