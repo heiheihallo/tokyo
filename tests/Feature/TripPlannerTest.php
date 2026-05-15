@@ -16,7 +16,9 @@ test('guests cannot access planner and trip management screens', function () {
 test('authenticated users can view the planner shell', function () {
     $this->actingAs(User::factory()->create());
 
-    $this->get(route('dashboard'))->assertOk();
+    $this->get(route('dashboard'))
+        ->assertOk()
+        ->assertSee('Advanced filters');
 });
 
 test('japan reference import creates multiple timelines and preserves edited records', function () {
@@ -52,6 +54,52 @@ test('planner filters timeline data by variant and priority', function () {
         ->assertSet('priority', 'high')
         ->assertSee('Long haul to Tokyo Haneda')
         ->assertDontSee('Low effort Copenhagen day');
+});
+
+test('admin timeline does not preselect a day', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    Livewire::actingAs(User::factory()->create())
+        ->test('pages::planner.dashboard')
+        ->assertSet('selectedDayId', null)
+        ->assertSet('showDayTimeline', false)
+        ->assertDontSee('Day timeline');
+});
+
+test('admin timeline hides expanded day slots until toggled', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
+
+    $day->itineraryItems()->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'stable_key' => 'private-admin-slot',
+        'item_type' => 'note',
+        'title' => 'Private admin transfer note',
+        'is_public' => false,
+        'sort_order' => 900,
+        'details' => [],
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('pages::planner.dashboard')
+        ->set('tripSlug', $trip->slug)
+        ->set('variantSlug', $variant->slug)
+        ->call('selectDay', $day->id)
+        ->assertSet('showDayTimeline', false)
+        ->assertSee('Show day timeline')
+        ->assertSee('METS_AKIHABARA')
+        ->assertDontSee('Private admin transfer note')
+        ->call('toggleDayTimeline')
+        ->assertSet('showDayTimeline', true)
+        ->assertSee('Hide day timeline')
+        ->assertSee('Tokyo Station First Avenue')
+        ->assertSee('Private admin transfer note')
+        ->assertSee('Private');
 });
 
 test('trip management can persist selected day edits', function () {
