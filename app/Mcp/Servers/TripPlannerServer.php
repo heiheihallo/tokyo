@@ -29,6 +29,7 @@ use App\Mcp\Tools\DetachAssetFromDayTool;
 use App\Mcp\Tools\DetachSourceFromDayTool;
 use App\Mcp\Tools\EstimateTripCostTool;
 use App\Mcp\Tools\GetDayDetailsTool;
+use App\Mcp\Tools\GetLoyaltyPlanTool;
 use App\Mcp\Tools\GetReferenceContextTool;
 use App\Mcp\Tools\GetSharedAssetTool;
 use App\Mcp\Tools\GetTimelineTool;
@@ -42,6 +43,9 @@ use App\Mcp\Tools\ListSourcesTool;
 use App\Mcp\Tools\ListTripsTool;
 use App\Mcp\Tools\PublishTripTool;
 use App\Mcp\Tools\PublishVariantTool;
+use App\Mcp\Tools\RecordAwardAvailabilityCheckTool;
+use App\Mcp\Tools\RecordBonusGrabTripTool;
+use App\Mcp\Tools\RecordFlightFareOptionTool;
 use App\Mcp\Tools\RecordFlightPriceTool;
 use App\Mcp\Tools\RemoveAssetMediaTool;
 use App\Mcp\Tools\ReorderAssetMediaTool;
@@ -56,6 +60,7 @@ use App\Mcp\Tools\UpdateDayNodeTool;
 use App\Mcp\Tools\UpdateDaySlotTool;
 use App\Mcp\Tools\UpdateDayTaskStatusTool;
 use App\Mcp\Tools\UpdateDayTaskTool;
+use App\Mcp\Tools\UpdateLoyaltyPlanTool;
 use App\Mcp\Tools\UpdateRoutePointTool;
 use App\Mcp\Tools\UpdateSharedAssetTool;
 use App\Mcp\Tools\UpdateSourceTool;
@@ -83,6 +88,7 @@ class TripPlannerServer extends Server
         ListAssetGapsTool::class,
         ListAssetMediaTool::class,
         EstimateTripCostTool::class,
+        GetLoyaltyPlanTool::class,
         ResearchFlightPricesTool::class,
         ListFlightPriceGapsTool::class,
         ListRoutePointsTool::class,
@@ -121,6 +127,10 @@ class TripPlannerServer extends Server
         DeleteSourceTool::class,
         AttachSourceToDayTool::class,
         DetachSourceFromDayTool::class,
+        UpdateLoyaltyPlanTool::class,
+        RecordFlightFareOptionTool::class,
+        RecordAwardAvailabilityCheckTool::class,
+        RecordBonusGrabTripTool::class,
         RecordFlightPriceTool::class,
         PublishTripTool::class,
         PublishVariantTool::class,

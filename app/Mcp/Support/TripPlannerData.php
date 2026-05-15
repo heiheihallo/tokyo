@@ -4,12 +4,18 @@ namespace App\Mcp\Support;
 
 use App\Models\Accommodation;
 use App\Models\Activity;
+use App\Models\AwardAvailabilityCheck;
+use App\Models\BonusGrabTrip;
+use App\Models\BonusGrabTripLeg;
 use App\Models\DayItineraryItem;
 use App\Models\DayNode;
 use App\Models\DayTask;
 use App\Models\FoodSpot;
+use App\Models\LoyaltyProgramSnapshot;
+use App\Models\LoyaltyVoucher;
 use App\Models\RoutePoint;
 use App\Models\Source;
+use App\Models\TransportFareOption;
 use App\Models\TransportLeg;
 use App\Models\Trip;
 use App\Models\TripVariant;
@@ -25,7 +31,7 @@ class TripPlannerData
      */
     public function trip(Trip $trip, bool $includeVariants = true): array
     {
-        $trip->loadMissing($includeVariants ? ['variants'] : []);
+        $trip->loadMissing($includeVariants ? ['variants', 'loyaltyProgramSnapshots.vouchers', 'loyaltyProgramSnapshots.bonusGrabTrips.legs'] : ['loyaltyProgramSnapshots.vouchers', 'loyaltyProgramSnapshots.bonusGrabTrips.legs']);
 
         return [
             'id' => $trip->id,
@@ -40,6 +46,7 @@ class TripPlannerData
             'is_public' => $trip->is_public,
             'published_at' => $trip->published_at?->toIso8601String(),
             'metadata' => $trip->metadata ?? [],
+            'loyalty_programs' => $trip->loyaltyProgramSnapshots->map(fn (LoyaltyProgramSnapshot $snapshot): array => $this->loyaltyProgramSnapshot($snapshot))->all(),
             'variants' => $includeVariants
                 ? $trip->variants->map(fn (TripVariant $variant): array => $this->variant($variant, includeCounts: true))->all()
                 : [],
@@ -180,6 +187,10 @@ class TripPlannerData
      */
     public function asset(Accommodation|Activity|FoodSpot|TransportLeg $asset): array
     {
+        if ($asset instanceof TransportLeg) {
+            $asset->loadMissing('fareOptions.awardAvailabilityChecks');
+        }
+
         return [
             'id' => $asset->id,
             'type' => class_basename($asset),
@@ -206,6 +217,9 @@ class TripPlannerData
                 'basis' => $asset->price_basis,
                 'notes' => $asset->price_notes,
             ],
+            'fare_options' => $asset instanceof TransportLeg
+                ? $asset->fareOptions->map(fn (TransportFareOption $option): array => $this->fareOption($option))->all()
+                : [],
             'media' => $asset instanceof HasMedia ? $this->media($asset) : [],
             'notes' => $asset->notes ?? null,
         ];
@@ -312,5 +326,156 @@ class TripPlannerData
             ->with(['accommodations', 'transportLegs', 'activities', 'foodSpots', 'sources'])
             ->orderBy('day_number')
             ->get();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function loyaltyProgramSnapshot(LoyaltyProgramSnapshot $snapshot): array
+    {
+        $snapshot->loadMissing(['vouchers', 'bonusGrabTrips.legs']);
+
+        return [
+            'id' => $snapshot->id,
+            'trip_id' => $snapshot->trip_id,
+            'program_name' => $snapshot->program_name,
+            'current_points' => $snapshot->current_points,
+            'current_level_points' => $snapshot->current_level_points,
+            'qualification_starts_on' => $snapshot->qualification_starts_on?->toDateString(),
+            'qualification_ends_on' => $snapshot->qualification_ends_on?->toDateString(),
+            'target_tier' => $snapshot->target_tier,
+            'target_level_points' => $snapshot->target_level_points,
+            'target_qualifying_flights' => $snapshot->target_qualifying_flights,
+            'expected_trip_level_points' => $snapshot->expected_trip_level_points,
+            'signup_bonus_points' => $snapshot->signup_bonus_points,
+            'card_spend_target_nok' => $snapshot->card_spend_target_nok,
+            'card_points_per_100_nok' => $snapshot->card_points_per_100_nok,
+            'card_level_points_per_100_nok' => $snapshot->card_level_points_per_100_nok,
+            'projected_card_points' => $snapshot->projected_card_points,
+            'projected_card_level_points' => $snapshot->projected_card_level_points,
+            'assumptions' => $snapshot->assumptions ?? [],
+            'notes' => $snapshot->notes,
+            'vouchers' => $snapshot->vouchers->map(fn (LoyaltyVoucher $voucher): array => $this->loyaltyVoucher($voucher))->all(),
+            'bonus_grab_trips' => $snapshot->bonusGrabTrips->map(fn (BonusGrabTrip $trip): array => $this->bonusGrabTrip($trip))->all(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function loyaltyVoucher(LoyaltyVoucher $voucher): array
+    {
+        return [
+            'id' => $voucher->id,
+            'voucher_type' => $voucher->voucher_type,
+            'status' => $voucher->status,
+            'quantity' => $voucher->quantity,
+            'earned_threshold_nok' => $voucher->earned_threshold_nok,
+            'valid_from' => $voucher->valid_from?->toDateString(),
+            'valid_until' => $voucher->valid_until?->toDateString(),
+            'notes' => $voucher->notes,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function fareOption(TransportFareOption $option): array
+    {
+        $option->loadMissing('awardAvailabilityChecks');
+
+        return [
+            'id' => $option->id,
+            'transport_leg_id' => $option->transport_leg_id,
+            'label' => $option->label,
+            'fare_type' => $option->fare_type,
+            'cabin' => $option->cabin,
+            'carrier' => $option->carrier,
+            'passengers' => $option->passengers,
+            'cash_min_nok' => $option->cash_min_nok,
+            'cash_max_nok' => $option->cash_max_nok,
+            'cash_min_jpy' => $option->cash_min_jpy,
+            'cash_max_jpy' => $option->cash_max_jpy,
+            'points_min' => $option->points_min,
+            'points_max' => $option->points_max,
+            'taxes_fees_min_nok' => $option->taxes_fees_min_nok,
+            'taxes_fees_max_nok' => $option->taxes_fees_max_nok,
+            'voucher_count' => $option->voucher_count,
+            'expected_level_points' => $option->expected_level_points,
+            'expected_bonus_points' => $option->expected_bonus_points,
+            'travel_dates' => $option->travel_dates,
+            'observed_at' => $option->observed_at?->toDateString(),
+            'fresh_until' => $option->fresh_until?->toDateString(),
+            'source_priority' => $option->source_priority,
+            'source_url' => $option->source_url,
+            'status' => $option->status,
+            'notes' => $option->notes,
+            'award_availability_checks' => $option->awardAvailabilityChecks->map(fn (AwardAvailabilityCheck $check): array => $this->awardAvailabilityCheck($check))->all(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function awardAvailabilityCheck(AwardAvailabilityCheck $check): array
+    {
+        return [
+            'id' => $check->id,
+            'checked_on' => $check->checked_on?->toDateString(),
+            'route_label' => $check->route_label,
+            'travel_dates' => $check->travel_dates,
+            'cabin' => $check->cabin,
+            'seats_seen' => $check->seats_seen,
+            'availability_status' => $check->availability_status,
+            'source_url' => $check->source_url,
+            'notes' => $check->notes,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function bonusGrabTrip(BonusGrabTrip $trip): array
+    {
+        $trip->loadMissing('legs');
+
+        return [
+            'id' => $trip->id,
+            'title' => $trip->title,
+            'route_label' => $trip->route_label,
+            'starts_on' => $trip->starts_on?->toDateString(),
+            'ends_on' => $trip->ends_on?->toDateString(),
+            'cash_cost_min_nok' => $trip->cash_cost_min_nok,
+            'cash_cost_max_nok' => $trip->cash_cost_max_nok,
+            'expected_bonus_points' => $trip->expected_bonus_points,
+            'expected_level_points' => $trip->expected_level_points,
+            'nights_away' => $trip->nights_away,
+            'cabin' => $trip->cabin,
+            'feasibility_score' => $trip->feasibility_score,
+            'status' => $trip->status,
+            'source_url' => $trip->source_url,
+            'notes' => $trip->notes,
+            'legs' => $trip->legs->map(fn (BonusGrabTripLeg $leg): array => $this->bonusGrabTripLeg($leg))->all(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function bonusGrabTripLeg(BonusGrabTripLeg $leg): array
+    {
+        return [
+            'id' => $leg->id,
+            'sequence' => $leg->sequence,
+            'origin' => $leg->origin,
+            'destination' => $leg->destination,
+            'carrier' => $leg->carrier,
+            'flight_number' => $leg->flight_number,
+            'cabin' => $leg->cabin,
+            'departs_at' => $leg->departs_at?->toIso8601String(),
+            'arrives_at' => $leg->arrives_at?->toIso8601String(),
+            'expected_bonus_points' => $leg->expected_bonus_points,
+            'expected_level_points' => $leg->expected_level_points,
+        ];
     }
 }

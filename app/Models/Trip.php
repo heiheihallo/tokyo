@@ -60,6 +60,11 @@ class Trip extends Model
             ->orderBy('sort_order');
     }
 
+    public function loyaltyProgramSnapshots(): HasMany
+    {
+        return $this->hasMany(LoyaltyProgramSnapshot::class)->latest();
+    }
+
     public function publish(): void
     {
         $this->forceFill([
