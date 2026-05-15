@@ -2,15 +2,19 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasTripAssetMedia;
 use Database\Factories\RoutePointFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Spatie\MediaLibrary\HasMedia;
 
-class RoutePoint extends Model
+class RoutePoint extends Model implements HasMedia
 {
     /** @use HasFactory<RoutePointFactory> */
     use HasFactory;
+
+    use HasTripAssetMedia;
 
     protected $fillable = [
         'trip_variant_id',
