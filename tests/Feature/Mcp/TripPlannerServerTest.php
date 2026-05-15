@@ -184,19 +184,27 @@ test('web mcp endpoint accepts configured bearer token', function () {
         ->assertJsonPath('result.serverInfo.name', 'Trip Planner Server');
 });
 
-test('web mcp endpoint lists thirty tools by default', function () {
+test('web mcp endpoint exposes enrichment tools in first tools list response', function () {
     config(['services.mcp_server.token' => 'production-secret']);
 
-    $this->withHeader('Authorization', 'Bearer production-secret')
+    $response = $this->withHeader('Authorization', 'Bearer production-secret')
         ->postJson('/mcp/trip-planner', [
             'jsonrpc' => '2.0',
             'id' => 1,
             'method' => 'tools/list',
             'params' => new stdClass,
-        ])
-        ->assertOk()
-        ->assertJsonCount(30, 'result.tools')
-        ->assertJsonPath('result.nextCursor', base64_encode(json_encode(['offset' => 30], JSON_THROW_ON_ERROR)));
+        ]);
+
+    $response->assertOk();
+
+    $toolNames = collect($response->json('result.tools'))->pluck('name');
+
+    expect($toolNames)->toContain(
+        'update-shared-asset',
+        'record-flight-price',
+        'update-source',
+        'add-asset-media-from-url',
+    );
 });
 
 function referenceDay(): DayNode
