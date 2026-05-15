@@ -10,7 +10,9 @@ use App\Mcp\Tools\ListTripsTool;
 use App\Models\DayNode;
 use App\Models\DayTask;
 use App\Models\Trip;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Route;
 use Laravel\Mcp\Server\Testing\TestResponse;
 
 test('read tools expose trip and day context', function () {
@@ -182,6 +184,14 @@ test('web mcp endpoint accepts configured bearer token', function () {
         ->postJson('/mcp/trip-planner', mcpInitializePayload())
         ->assertOk()
         ->assertJsonPath('result.serverInfo.name', 'Trip Planner Server');
+});
+
+test('web mcp endpoint keeps bearer auth while allowing internal batch usage', function () {
+    $middleware = Route::getRoutes()
+        ->match(Request::create('/mcp/trip-planner', 'POST'))
+        ->gatherMiddleware();
+
+    expect($middleware)->toContain('mcp.bearer', 'throttle:3000,1');
 });
 
 test('web mcp endpoint exposes enrichment tools in first tools list response', function () {
