@@ -7,6 +7,7 @@ use Database\Factories\TransportLegFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Spatie\MediaLibrary\HasMedia;
 
 class TransportLeg extends Model implements HasMedia
@@ -51,5 +52,10 @@ class TransportLeg extends Model implements HasMedia
         return $this->belongsToMany(DayNode::class)
             ->withPivot(['sequence', 'booking_status', 'reservation_url', 'notes'])
             ->withTimestamps();
+    }
+
+    public function fareOptions(): HasMany
+    {
+        return $this->hasMany(TransportFareOption::class);
     }
 }
