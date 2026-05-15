@@ -50,6 +50,7 @@ class DetachAssetFromDayTool extends Tool
                 'day_node_id' => $day->id,
             ]],
             risk: 'medium',
+            requiresConfirmation: true,
         );
 
         return $guard->handle($request, $preview, function () use ($relation, $asset): array {

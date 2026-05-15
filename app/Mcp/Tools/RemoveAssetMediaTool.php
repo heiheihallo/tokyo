@@ -44,6 +44,7 @@ class RemoveAssetMediaTool extends Tool
                 'file_name' => $media->file_name,
             ]],
             risk: 'high',
+            requiresConfirmation: true,
         );
 
         return $guard->handle($request, $preview, function () use ($media): array {

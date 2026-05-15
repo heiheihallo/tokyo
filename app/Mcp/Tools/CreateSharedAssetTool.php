@@ -15,7 +15,7 @@ use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
 
 #[Name('create-shared-asset')]
-#[Description('Create a reusable accommodation, activity, food spot, or transport leg after preview and confirmation.')]
+#[Description('Create a reusable accommodation, activity, food spot, or transport leg directly.')]
 #[IsDestructive(false)]
 class CreateSharedAssetTool extends Tool
 {
@@ -104,9 +104,7 @@ class CreateSharedAssetTool extends Tool
             'price_max_jpy' => $schema->integer()->description('Optional maximum JPY price.'),
             'price_basis' => $schema->string()->description('per_night, per_person, per_ticket, per_meal, per_leg, per_group, free, or unknown.'),
             'price_notes' => $schema->string()->description('Optional price notes.'),
-            'dry_run' => $schema->boolean()->description('Defaults to true. Must be false to write.'),
-            'confirm' => $schema->boolean()->description('Defaults to false. Must be true to write.'),
-            'preview_token' => $schema->string()->description('Token from a prior preview response.'),
+            'dry_run' => $schema->boolean()->description('Optional. When true, previews the asset creation without writing.'),
         ];
     }
 }

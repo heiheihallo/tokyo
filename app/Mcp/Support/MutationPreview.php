@@ -14,6 +14,7 @@ class MutationPreview
         public readonly array $changes,
         public readonly string $risk = 'medium',
         public readonly array $metadata = [],
+        public readonly bool $requiresConfirmation = false,
     ) {}
 
     /**

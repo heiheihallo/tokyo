@@ -39,6 +39,7 @@ class DeleteDayTaskTool extends Tool
                 'title' => $task->title,
             ]],
             risk: 'high',
+            requiresConfirmation: true,
         );
 
         return $guard->handle($request, $preview, function () use ($task): array {

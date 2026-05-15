@@ -15,7 +15,7 @@ use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
 
 #[Name('record-flight-price')]
-#[Description('Record reviewed flight fare ranges and research metadata on a flight transport leg after preview and confirmation.')]
+#[Description('Record reviewed flight fare ranges and research metadata directly on a flight transport leg.')]
 #[IsDestructive(false)]
 class RecordFlightPriceTool extends Tool
 {
@@ -106,9 +106,7 @@ class RecordFlightPriceTool extends Tool
             'luggage_assumptions' => $schema->string()->description('Optional luggage assumptions.'),
             'passengers' => $schema->integer()->description('Optional passenger count.'),
             'travel_dates' => $schema->string()->description('Optional travel date summary.'),
-            'dry_run' => $schema->boolean()->description('Defaults to true. Must be false to write.'),
-            'confirm' => $schema->boolean()->description('Defaults to false. Must be true.'),
-            'preview_token' => $schema->string()->description('Token from a prior preview response.'),
+            'dry_run' => $schema->boolean()->description('Optional. When true, previews the update without writing.'),
         ];
     }
 }

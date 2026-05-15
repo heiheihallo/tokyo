@@ -47,6 +47,7 @@ class DetachSourceFromDayTool extends Tool
             summary: 'Detach source '.$source->title.' from '.$day->title.'.',
             changes: [['operation' => 'detach', 'model' => Source::class, 'id' => $source->id, 'day_node_id' => $day->id]],
             risk: 'low',
+            requiresConfirmation: true,
         );
 
         return $guard->handle($request, $preview, function () use ($day, $source): array {

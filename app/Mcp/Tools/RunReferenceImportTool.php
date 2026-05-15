@@ -40,6 +40,7 @@ class RunReferenceImportTool extends Tool
                 'options' => ['--sync-reference' => $sync],
             ]],
             risk: $sync ? 'high' : 'medium',
+            requiresConfirmation: $sync,
         );
 
         return $guard->handle($request, $preview, function () use ($sync): array {

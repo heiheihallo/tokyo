@@ -15,9 +15,24 @@ class McpMutationGuard
      */
     public function handle(Request $request, MutationPreview $preview, Closure $mutate): ResponseFactory
     {
-        $dryRun = $this->boolean($request->get('dry_run', true));
+        $explicitDryRun = array_key_exists('dry_run', $request->all());
+        $dryRun = $this->boolean($request->get('dry_run', $preview->requiresConfirmation));
         $confirm = $this->boolean($request->get('confirm', false));
         $fingerprint = $this->fingerprint($request, $preview);
+
+        if (! $preview->requiresConfirmation && ! $dryRun) {
+            return $this->execute($preview, $mutate);
+        }
+
+        if (! $preview->requiresConfirmation && $explicitDryRun && $dryRun) {
+            return Response::structured([
+                'status' => 'preview',
+                'would_write' => false,
+                'requires_confirmation' => false,
+                'message' => 'No changes were made. Re-run without dry_run=true to execute.',
+                'preview' => $preview->toArray(),
+            ]);
+        }
 
         if ($dryRun || ! $confirm) {
             $token = $this->storePreview($fingerprint);
@@ -45,6 +60,14 @@ class McpMutationGuard
 
         Cache::forget($this->cacheKey($previewToken));
 
+        return $this->execute($preview, $mutate);
+    }
+
+    /**
+     * @param  Closure(): array<string, mixed>  $mutate
+     */
+    private function execute(MutationPreview $preview, Closure $mutate): ResponseFactory
+    {
         return Response::structured([
             'status' => 'executed',
             'would_write' => true,

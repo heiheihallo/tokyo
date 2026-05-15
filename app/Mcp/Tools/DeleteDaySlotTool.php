@@ -43,6 +43,7 @@ class DeleteDaySlotTool extends Tool
                 ],
             ]],
             risk: 'high',
+            requiresConfirmation: true,
         );
 
         return $guard->handle($request, $preview, function () use ($slot): array {

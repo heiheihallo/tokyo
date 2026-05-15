@@ -4,6 +4,7 @@ use App\Mcp\Prompts\PreparePublicItineraryPrompt;
 use App\Mcp\Resources\ReadmeResource;
 use App\Mcp\Servers\TripPlannerServer;
 use App\Mcp\Tools\CreateDayTaskTool;
+use App\Mcp\Tools\DeleteDayTaskTool;
 use App\Mcp\Tools\GetDayDetailsTool;
 use App\Mcp\Tools\ListTripsTool;
 use App\Models\DayNode;
@@ -29,7 +30,7 @@ test('read tools expose trip and day context', function () {
         ->assertSee('Tokyo Ramen Street');
 });
 
-test('guarded mutation tools preview by default and do not write', function () {
+test('non destructive mutation tools write directly by default', function () {
     Artisan::call('trip:import-japan-reference');
 
     $day = referenceDay();
@@ -45,6 +46,33 @@ test('guarded mutation tools preview by default and do not write', function () {
 
     $response
         ->assertOk()
+        ->assertStructuredContent(fn ($json) => $json
+            ->where('status', 'executed')
+            ->where('would_write', true)
+            ->where('requires_confirmation', false)
+            ->etc());
+
+    expect($day->tasks()->count())->toBe($beforeCount + 1);
+});
+
+test('destructive mutation tools preview by default and do not write', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $day = referenceDay();
+    $task = DayTask::factory()->create([
+        'trip_id' => $day->trip_id,
+        'trip_variant_id' => $day->trip_variant_id,
+        'day_node_id' => $day->id,
+        'title' => 'Remove duplicate planning note',
+    ]);
+    $beforeCount = $day->tasks()->count();
+
+    $response = TripPlannerServer::tool(DeleteDayTaskTool::class, [
+        'task_id' => $task->id,
+    ]);
+
+    $response
+        ->assertOk()
         ->assertSee('No changes were made')
         ->assertStructuredContent(fn ($json) => $json
             ->where('status', 'preview')
@@ -53,20 +81,23 @@ test('guarded mutation tools preview by default and do not write', function () {
             ->etc());
 
     expect($day->tasks()->count())->toBe($beforeCount);
+    expect($task->fresh())->not->toBeNull();
 });
 
-test('guarded mutation tools block writes without valid preview token', function () {
+test('destructive mutation tools block writes without valid preview token', function () {
     Artisan::call('trip:import-japan-reference');
 
     $day = referenceDay();
+    $task = DayTask::factory()->create([
+        'trip_id' => $day->trip_id,
+        'trip_variant_id' => $day->trip_variant_id,
+        'day_node_id' => $day->id,
+        'title' => 'Confirm arcade opening time',
+    ]);
     $beforeCount = $day->tasks()->count();
 
-    TripPlannerServer::tool(CreateDayTaskTool::class, [
-        'trip_slug' => 'japan-summer-2027',
-        'variant_slug' => 'value-copenhagen-stopover',
-        'day' => 'day-4',
-        'title' => 'Confirm arcade opening time',
-        'priority' => 'medium',
+    TripPlannerServer::tool(DeleteDayTaskTool::class, [
+        'task_id' => $task->id,
         'dry_run' => false,
         'confirm' => true,
         'preview_token' => 'invalid-token',
@@ -74,30 +105,29 @@ test('guarded mutation tools block writes without valid preview token', function
         ->assertHasErrors(['Invalid or expired preview_token']);
 
     expect($day->tasks()->count())->toBe($beforeCount);
+    expect($task->fresh())->not->toBeNull();
 });
 
-test('guarded mutation tools write after confirmed preview token', function () {
+test('destructive mutation tools write after confirmed preview token', function () {
     Artisan::call('trip:import-japan-reference');
 
     $day = referenceDay();
+    $task = DayTask::factory()->create([
+        'trip_id' => $day->trip_id,
+        'trip_variant_id' => $day->trip_variant_id,
+        'day_node_id' => $day->id,
+        'title' => 'Confirm character street timing',
+    ]);
     $beforeCount = $day->tasks()->count();
 
-    $preview = TripPlannerServer::tool(CreateDayTaskTool::class, [
-        'trip_slug' => 'japan-summer-2027',
-        'variant_slug' => 'value-copenhagen-stopover',
-        'day' => 'day-4',
-        'title' => 'Confirm character street timing',
-        'priority' => 'medium',
+    $preview = TripPlannerServer::tool(DeleteDayTaskTool::class, [
+        'task_id' => $task->id,
     ]);
 
     $token = structuredContent($preview)['preview']['preview_token'];
 
-    TripPlannerServer::tool(CreateDayTaskTool::class, [
-        'trip_slug' => 'japan-summer-2027',
-        'variant_slug' => 'value-copenhagen-stopover',
-        'day' => 'day-4',
-        'title' => 'Confirm character street timing',
-        'priority' => 'medium',
+    TripPlannerServer::tool(DeleteDayTaskTool::class, [
+        'task_id' => $task->id,
         'dry_run' => false,
         'confirm' => true,
         'preview_token' => $token,
@@ -108,8 +138,8 @@ test('guarded mutation tools write after confirmed preview token', function () {
             ->where('would_write', true)
             ->etc());
 
-    expect($day->tasks()->count())->toBe($beforeCount + 1);
-    expect(DayTask::query()->where('title', 'Confirm character street timing')->exists())->toBeTrue();
+    expect($day->tasks()->count())->toBe($beforeCount - 1);
+    expect($task->fresh())->toBeNull();
 });
 
 test('resources and prompts expose safe agent context', function () {

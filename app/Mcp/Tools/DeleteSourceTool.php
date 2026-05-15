@@ -44,6 +44,7 @@ class DeleteSourceTool extends Tool
             summary: 'Delete source '.$source->title.'.',
             changes: [['operation' => 'delete', 'model' => Source::class, 'id' => $source->id]],
             risk: 'high',
+            requiresConfirmation: true,
         );
 
         return $guard->handle($request, $preview, function () use ($source): array {
