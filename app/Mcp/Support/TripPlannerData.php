@@ -15,6 +15,8 @@ use App\Models\Trip;
 use App\Models\TripVariant;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 class TripPlannerData
 {
@@ -191,10 +193,50 @@ class TripPlannerData
             'route_label' => $asset->route_label ?? null,
             'origin' => $asset->origin ?? null,
             'destination' => $asset->destination ?? null,
+            'duration_label' => $asset->duration_label ?? null,
+            'operator' => $asset->operator ?? null,
+            'reservation_url' => $asset->reservation_url ?? null,
             'latitude' => $asset->latitude ?? null,
             'longitude' => $asset->longitude ?? null,
+            'price' => [
+                'min_nok' => $asset->price_min_nok,
+                'max_nok' => $asset->price_max_nok,
+                'min_jpy' => $asset->price_min_jpy,
+                'max_jpy' => $asset->price_max_jpy,
+                'basis' => $asset->price_basis,
+                'notes' => $asset->price_notes,
+            ],
+            'media' => $asset instanceof HasMedia ? $this->media($asset) : [],
             'notes' => $asset->notes ?? null,
         ];
+    }
+
+    /**
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    public function media(HasMedia $model): array
+    {
+        return collect(['main_image', 'images'])
+            ->mapWithKeys(fn (string $collection): array => [
+                $collection => $model->getMedia($collection)
+                    ->map(fn (Media $media): array => [
+                        'id' => $media->id,
+                        'name' => $media->name,
+                        'file_name' => $media->file_name,
+                        'mime_type' => $media->mime_type,
+                        'size' => $media->size,
+                        'order_column' => $media->order_column,
+                        'url' => $media->getUrl(),
+                        'conversions' => [
+                            'thumb' => $media->hasGeneratedConversion('thumb') ? $media->getUrl('thumb') : null,
+                            'card' => $media->hasGeneratedConversion('card') ? $media->getUrl('card') : null,
+                            'hero' => $media->hasGeneratedConversion('hero') ? $media->getUrl('hero') : null,
+                        ],
+                        'custom_properties' => $media->custom_properties,
+                    ])
+                    ->all(),
+            ])
+            ->all();
     }
 
     /**

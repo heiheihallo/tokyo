@@ -27,11 +27,17 @@ class UpdateDaySlotTool extends Tool
         $validated = $request->validate([
             'slot_id' => ['required', 'integer', 'exists:day_itinerary_items,id'],
             'item_type' => ['nullable', 'in:stay,move,activity,food,buffer,note'],
+            'starts_at' => ['nullable', 'date_format:H:i'],
+            'ends_at' => ['nullable', 'date_format:H:i'],
             'title' => ['nullable', 'string', 'max:255'],
             'time_label' => ['nullable', 'string', 'max:50'],
             'location_label' => ['nullable', 'string', 'max:255'],
             'summary' => ['nullable', 'string', 'max:1000'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'is_public' => ['nullable', 'boolean'],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
+            'details' => ['nullable', 'array'],
         ]);
 
         $slot = DayItineraryItem::query()->findOrFail($validated['slot_id']);
@@ -67,11 +73,17 @@ class UpdateDaySlotTool extends Tool
         return [
             'slot_id' => $schema->integer()->description('Slot id.')->required(),
             'item_type' => $schema->string()->description('Optional slot type.'),
+            'starts_at' => $schema->string()->description('Optional HH:MM start time.'),
+            'ends_at' => $schema->string()->description('Optional HH:MM end time.'),
             'title' => $schema->string()->description('Optional title.'),
             'time_label' => $schema->string()->description('Optional time label.'),
             'location_label' => $schema->string()->description('Optional location.'),
             'summary' => $schema->string()->description('Optional summary.'),
+            'latitude' => $schema->number()->description('Optional latitude.'),
+            'longitude' => $schema->number()->description('Optional longitude.'),
             'is_public' => $schema->boolean()->description('Optional public visibility.'),
+            'sort_order' => $schema->integer()->description('Optional sort order.'),
+            'details' => $schema->object()->description('Optional details object.'),
             'dry_run' => $schema->boolean()->description('Defaults to true. Must be false to write.'),
             'confirm' => $schema->boolean()->description('Defaults to false. Must be true to write.'),
             'preview_token' => $schema->string()->description('Token from a prior preview response.'),

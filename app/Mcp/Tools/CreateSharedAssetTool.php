@@ -30,6 +30,12 @@ class CreateSharedAssetTool extends Tool
             'city' => ['nullable', 'string', 'max:255'],
             'country' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'price_min_nok' => ['nullable', 'integer', 'min:0'],
+            'price_max_nok' => ['nullable', 'integer', 'min:0'],
+            'price_min_jpy' => ['nullable', 'integer', 'min:0'],
+            'price_max_jpy' => ['nullable', 'integer', 'min:0'],
+            'price_basis' => ['nullable', 'in:per_night,per_person,per_ticket,per_meal,per_leg,per_group,free,unknown'],
+            'price_notes' => ['nullable', 'string', 'max:4000'],
         ]);
 
         $model = $data->assetModel($validated['type']);
@@ -50,6 +56,12 @@ class CreateSharedAssetTool extends Tool
             $payload = [
                 'stable_key' => $stableKey,
                 'notes' => $validated['notes'] ?? null,
+                'price_min_nok' => $validated['price_min_nok'] ?? null,
+                'price_max_nok' => $validated['price_max_nok'] ?? null,
+                'price_min_jpy' => $validated['price_min_jpy'] ?? null,
+                'price_max_jpy' => $validated['price_max_jpy'] ?? null,
+                'price_basis' => $validated['price_basis'] ?? 'unknown',
+                'price_notes' => $validated['price_notes'] ?? null,
             ];
 
             if ($validated['type'] === 'transport') {
@@ -86,6 +98,12 @@ class CreateSharedAssetTool extends Tool
             'city' => $schema->string()->description('Optional city.'),
             'country' => $schema->string()->description('Optional country.'),
             'notes' => $schema->string()->description('Optional notes.'),
+            'price_min_nok' => $schema->integer()->description('Optional minimum NOK price.'),
+            'price_max_nok' => $schema->integer()->description('Optional maximum NOK price.'),
+            'price_min_jpy' => $schema->integer()->description('Optional minimum JPY price.'),
+            'price_max_jpy' => $schema->integer()->description('Optional maximum JPY price.'),
+            'price_basis' => $schema->string()->description('per_night, per_person, per_ticket, per_meal, per_leg, per_group, free, or unknown.'),
+            'price_notes' => $schema->string()->description('Optional price notes.'),
             'dry_run' => $schema->boolean()->description('Defaults to true. Must be false to write.'),
             'confirm' => $schema->boolean()->description('Defaults to false. Must be true to write.'),
             'preview_token' => $schema->string()->description('Token from a prior preview response.'),
