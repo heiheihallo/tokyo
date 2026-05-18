@@ -212,8 +212,8 @@ test('web mcp endpoint exposes enrichment tools in first tools list response', f
     expect($toolNames)->toContain(
         'update-shared-asset',
         'record-flight-price',
-        'update-source',
-        'add-asset-media-from-url',
+        'manage-source',
+        'manage-asset-media',
     );
 });
 

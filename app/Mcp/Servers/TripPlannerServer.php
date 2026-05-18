@@ -9,22 +9,17 @@ use App\Mcp\Resources\ReadmeResource;
 use App\Mcp\Resources\ResearchContextResource;
 use App\Mcp\Resources\TripSnapshotResource;
 use App\Mcp\Resources\VariantSnapshotResource;
-use App\Mcp\Tools\AddAssetMediaFromUrlTool;
 use App\Mcp\Tools\AnalyzePlanningGapsTool;
 use App\Mcp\Tools\AttachAssetToDayTool;
 use App\Mcp\Tools\AttachSourceToDayTool;
 use App\Mcp\Tools\CreateDaySlotTool;
 use App\Mcp\Tools\CreateDayTaskTool;
-use App\Mcp\Tools\CreateRoutePointTool;
 use App\Mcp\Tools\CreateSharedAssetTool;
-use App\Mcp\Tools\CreateSourceTool;
 use App\Mcp\Tools\CreateTripTool;
 use App\Mcp\Tools\CreateVariantTool;
 use App\Mcp\Tools\DeleteDaySlotTool;
 use App\Mcp\Tools\DeleteDayTaskTool;
-use App\Mcp\Tools\DeleteRoutePointTool;
 use App\Mcp\Tools\DeleteSharedAssetTool;
-use App\Mcp\Tools\DeleteSourceTool;
 use App\Mcp\Tools\DetachAssetFromDayTool;
 use App\Mcp\Tools\DetachSourceFromDayTool;
 use App\Mcp\Tools\EstimateTripCostTool;
@@ -41,29 +36,26 @@ use App\Mcp\Tools\ListOpenTasksTool;
 use App\Mcp\Tools\ListRoutePointsTool;
 use App\Mcp\Tools\ListSourcesTool;
 use App\Mcp\Tools\ListTripsTool;
-use App\Mcp\Tools\PublishTripTool;
-use App\Mcp\Tools\PublishVariantTool;
+use App\Mcp\Tools\ManageAssetMediaTool;
+use App\Mcp\Tools\ManagePublicationTool;
+use App\Mcp\Tools\ManageRoutePointTool;
+use App\Mcp\Tools\ManageSourceTool;
 use App\Mcp\Tools\RecordAwardAvailabilityCheckTool;
 use App\Mcp\Tools\RecordBonusGrabTripTool;
 use App\Mcp\Tools\RecordFlightFareOptionTool;
 use App\Mcp\Tools\RecordFlightPriceTool;
-use App\Mcp\Tools\RemoveAssetMediaTool;
-use App\Mcp\Tools\ReorderAssetMediaTool;
 use App\Mcp\Tools\ReorderDaySlotsTool;
 use App\Mcp\Tools\ResearchFlightPricesTool;
 use App\Mcp\Tools\RunDayPlanningBackfillTool;
 use App\Mcp\Tools\RunReferenceImportTool;
 use App\Mcp\Tools\SearchAssetsTool;
-use App\Mcp\Tools\SetAssetMainImageTool;
 use App\Mcp\Tools\UpdateDayAssetPivotTool;
 use App\Mcp\Tools\UpdateDayNodeTool;
 use App\Mcp\Tools\UpdateDaySlotTool;
 use App\Mcp\Tools\UpdateDayTaskStatusTool;
 use App\Mcp\Tools\UpdateDayTaskTool;
 use App\Mcp\Tools\UpdateLoyaltyPlanTool;
-use App\Mcp\Tools\UpdateRoutePointTool;
 use App\Mcp\Tools\UpdateSharedAssetTool;
-use App\Mcp\Tools\UpdateSourceTool;
 use App\Mcp\Tools\UpdateTripTool;
 use App\Mcp\Tools\UpdateVariantTool;
 use Laravel\Mcp\Server;
@@ -116,24 +108,16 @@ class TripPlannerServer extends Server
         AttachAssetToDayTool::class,
         DetachAssetFromDayTool::class,
         UpdateDayAssetPivotTool::class,
-        AddAssetMediaFromUrlTool::class,
-        SetAssetMainImageTool::class,
-        RemoveAssetMediaTool::class,
-        ReorderAssetMediaTool::class,
-        CreateRoutePointTool::class,
-        UpdateRoutePointTool::class,
-        DeleteRoutePointTool::class,
-        CreateSourceTool::class,
-        UpdateSourceTool::class,
-        DeleteSourceTool::class,
+        ManageAssetMediaTool::class,
+        ManageRoutePointTool::class,
+        ManageSourceTool::class,
         AttachSourceToDayTool::class,
         DetachSourceFromDayTool::class,
         UpdateLoyaltyPlanTool::class,
         RecordFlightFareOptionTool::class,
         RecordAwardAvailabilityCheckTool::class,
         RecordBonusGrabTripTool::class,
-        PublishTripTool::class,
-        PublishVariantTool::class,
+        ManagePublicationTool::class,
         RunReferenceImportTool::class,
         RunDayPlanningBackfillTool::class,
     ];
