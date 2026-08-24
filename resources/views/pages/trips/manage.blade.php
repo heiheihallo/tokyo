@@ -26,6 +26,8 @@ new #[Title('Manage trips')] class extends Component {
     public ?int $selectedAssetId = null;
     public string $assetTab = 'accommodations';
     public string $assetSearch = '';
+    public string $planningSeverityFilter = 'all';
+    public string $planningCategoryFilter = 'all';
 
     public array $tripForm = ['name' => '', 'summary' => '', 'starts_on' => '', 'ends_on' => '', 'arrival_preference' => 'HND'];
     public array $variantForm = ['name' => '', 'budget_scenario' => 'value', 'stopover_type' => '', 'flight_strategy' => ''];
@@ -681,11 +683,9 @@ new #[Title('Manage trips')] class extends Component {
             return [];
         }
 
-        return collect()
-            ->merge($this->publicationPlanningIssues())
-            ->merge($this->dayPlanningIssues())
-            ->merge($this->slotPlanningIssues())
-            ->merge($this->assetPlanningIssues())
+        return $this->allPlanningIssues()
+            ->when($this->planningSeverityFilter !== 'all', fn ($issues) => $issues->where('severity', $this->planningSeverityFilter))
+            ->when($this->planningCategoryFilter !== 'all', fn ($issues) => $issues->where('category_key', $this->planningCategoryFilter))
             ->take(16)
             ->values()
             ->all();
@@ -702,6 +702,15 @@ new #[Title('Manage trips')] class extends Component {
             'medium' => $issues->where('severity', 'medium')->count(),
             'low' => $issues->where('severity', 'low')->count(),
         ];
+    }
+
+    #[Computed]
+    public function planningCategoryOptions(): array
+    {
+        return $this->allPlanningIssues()
+            ->mapWithKeys(fn (array $issue): array => [$issue['category_key'] => $issue['category']])
+            ->sort()
+            ->all();
     }
 
     #[Computed]
@@ -854,6 +863,16 @@ new #[Title('Manage trips')] class extends Component {
         return $rules;
     }
 
+    private function allPlanningIssues(): \Illuminate\Support\Collection
+    {
+        return collect()
+            ->merge($this->publicationPlanningIssues())
+            ->merge($this->publicReadinessPlanningIssues())
+            ->merge($this->dayPlanningIssues())
+            ->merge($this->slotPlanningIssues())
+            ->merge($this->assetPlanningIssues());
+    }
+
     private function publicationPlanningIssues(): array
     {
         $issues = [];
@@ -862,6 +881,7 @@ new #[Title('Manage trips')] class extends Component {
             $issues[] = [
                 'key' => 'trip-public-no-variants-'.$this->selectedTrip->id,
                 'severity' => 'high',
+                'category_key' => 'publication',
                 'category' => __('Publication'),
                 'title' => __('Published trip has no public timelines'),
                 'detail' => __('Show at least one timeline or unpublish the trip.'),
@@ -873,6 +893,30 @@ new #[Title('Manage trips')] class extends Component {
         return $issues;
     }
 
+    private function publicReadinessPlanningIssues(): array
+    {
+        if (! $this->selectedTrip?->is_public || ! $this->selectedVariant?->is_public) {
+            return [];
+        }
+
+        return $this->days
+            ->filter(fn (DayNode $day): bool => $day->itineraryItems()->where('is_public', true)->doesntExist())
+            ->take(4)
+            ->map(fn (DayNode $day): array => [
+                'key' => 'public-day-empty-'.$day->id,
+                'severity' => 'medium',
+                'category_key' => 'public',
+                'category' => __('Public'),
+                'title' => __('Published day has no public slots'),
+                'detail' => __('Day :day · :title', ['day' => $day->day_number, 'title' => $day->title]),
+                'action' => __('Open day'),
+                'target_type' => 'day',
+                'day_id' => $day->id,
+            ])
+            ->values()
+            ->all();
+    }
+
     private function dayPlanningIssues(): array
     {
         return $this->days
@@ -882,6 +926,7 @@ new #[Title('Manage trips')] class extends Component {
             ->map(fn (DayNode $day): array => [
                 'key' => 'day-high-unbooked-'.$day->id,
                 'severity' => 'high',
+                'category_key' => 'booking',
                 'category' => __('Booking'),
                 'title' => __('High-priority day is not booked'),
                 'detail' => __('Day :day · :title', ['day' => $day->day_number, 'title' => $day->title]),
@@ -920,6 +965,7 @@ new #[Title('Manage trips')] class extends Component {
             ->map(fn (DayItineraryItem $slot): array => [
                 'key' => 'slot-gap-'.$slot->id,
                 'severity' => $slot->is_public && ($slot->latitude === null || $slot->longitude === null) ? 'medium' : 'low',
+                'category_key' => 'timeline',
                 'category' => __('Timeline'),
                 'title' => $this->slotPlanningTitle($slot),
                 'detail' => __('Day :day · :title', ['day' => $slot->dayNode->day_number, 'title' => $slot->title]),
@@ -958,6 +1004,7 @@ new #[Title('Manage trips')] class extends Component {
                 ->map(fn (Model $asset): array => [
                     'key' => 'asset-gap-'.$assetTab.'-'.$asset->id,
                     'severity' => 'low',
+                    'category_key' => 'assets',
                     'category' => __('Assets'),
                     'title' => __('Shared asset needs cleanup'),
                     'detail' => $this->assetLabel($asset),
@@ -1229,6 +1276,22 @@ new #[Title('Manage trips')] class extends Component {
                                 <div class="text-xs text-zinc-500">{{ __('Low') }}</div>
                             </div>
                         </div>
+                    </div>
+
+                    <div class="mt-5 grid gap-3 sm:grid-cols-2 lg:max-w-xl">
+                        <flux:select wire:model.live="planningSeverityFilter" :label="__('Severity')">
+                            <flux:select.option value="all">{{ __('All severities') }}</flux:select.option>
+                            <flux:select.option value="high">{{ __('High') }}</flux:select.option>
+                            <flux:select.option value="medium">{{ __('Medium') }}</flux:select.option>
+                            <flux:select.option value="low">{{ __('Low') }}</flux:select.option>
+                        </flux:select>
+
+                        <flux:select wire:model.live="planningCategoryFilter" :label="__('Category')">
+                            <flux:select.option value="all">{{ __('All categories') }}</flux:select.option>
+                            @foreach ($this->planningCategoryOptions as $categoryKey => $categoryLabel)
+                                <flux:select.option value="{{ $categoryKey }}">{{ $categoryLabel }}</flux:select.option>
+                            @endforeach
+                        </flux:select>
                     </div>
 
                     <div class="mt-5 grid gap-3 lg:grid-cols-2">

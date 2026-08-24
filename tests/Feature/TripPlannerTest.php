@@ -586,7 +586,11 @@ test('trip management planning health detects gaps and opens targets', function 
     $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
     $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
     $day = $variant->dayNodes()->where('stable_key', 'day-6')->firstOrFail();
+    $publicGapDay = $variant->dayNodes()->where('stable_key', 'day-5')->firstOrFail();
     $day->update(['booking_priority' => 'high', 'booking_status' => 'unbooked']);
+    $trip->publish();
+    $variant->publish();
+    $publicGapDay->itineraryItems()->update(['is_public' => false]);
 
     $slot = $day->itineraryItems()->create([
         'trip_id' => $trip->id,
@@ -612,7 +616,18 @@ test('trip management planning health detects gaps and opens targets', function 
         ->assertSee('Planning health')
         ->assertSee('High-priority day is not booked')
         ->assertSee('Public slot is missing map coordinates')
+        ->assertSee('Published day has no public slots')
         ->assertSee('AAA Planning Health Hotel')
+        ->set('planningSeverityFilter', 'high')
+        ->assertSee('High-priority day is not booked')
+        ->assertDontSee('Public slot is missing map coordinates')
+        ->set('planningSeverityFilter', 'all')
+        ->set('planningCategoryFilter', 'assets')
+        ->assertSee('AAA Planning Health Hotel')
+        ->assertDontSee('High-priority day is not booked')
+        ->set('planningCategoryFilter', 'public')
+        ->assertSee('Published day has no public slots')
+        ->set('planningCategoryFilter', 'all')
         ->call('openPlanningIssue', 'slot-gap-'.$slot->id)
         ->assertSet('selectedDayId', $day->id)
         ->assertSet('selectedSlotId', $slot->id)
