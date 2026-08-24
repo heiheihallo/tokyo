@@ -549,7 +549,7 @@ new #[Title('Manage trips')] class extends Component {
 
     public function openPlanningIssue(string $issueKey): void
     {
-        $issue = collect($this->planningIssues)->firstWhere('key', $issueKey);
+        $issue = $this->findPlanningIssue($issueKey);
 
         if (! $issue) {
             return;
@@ -572,6 +572,46 @@ new #[Title('Manage trips')] class extends Component {
             $this->assetTab = $issue['asset_tab'];
             $this->selectAsset($issue['asset_id']);
         }
+    }
+
+    public function quickFixPlanningIssue(string $issueKey): void
+    {
+        if (str_starts_with($issueKey, 'day-high-unbooked-')) {
+            $this->markPlanningDayPlanned((int) Str::after($issueKey, 'day-high-unbooked-'));
+
+            return;
+        }
+
+        if (str_starts_with($issueKey, 'slot-gap-')) {
+            $slot = $this->planningSlot((int) Str::after($issueKey, 'slot-gap-'));
+
+            if (! $slot) {
+                return;
+            }
+
+            match ($this->slotPlanningQuickFix($slot)) {
+                'make_slot_private' => $this->makePlanningSlotPrivate($slot->id),
+                'copy_slot_coordinates' => $this->copyPlanningSlotCoordinates($slot->id),
+                'set_slot_time_placeholder' => $this->setPlanningSlotTimePlaceholder($slot->id),
+                default => null,
+            };
+
+            return;
+        }
+
+        $issue = $this->findPlanningIssue($issueKey);
+
+        if (! $issue || blank($issue['quick_fix'] ?? null)) {
+            return;
+        }
+
+        match ($issue['quick_fix']) {
+            'mark_day_planned' => $this->markPlanningDayPlanned($issue['day_id']),
+            'make_slot_private' => $this->makePlanningSlotPrivate($issue['slot_id']),
+            'copy_slot_coordinates' => $this->copyPlanningSlotCoordinates($issue['slot_id']),
+            'set_slot_time_placeholder' => $this->setPlanningSlotTimePlaceholder($issue['slot_id']),
+            default => null,
+        };
     }
 
     #[Computed]
@@ -873,6 +913,118 @@ new #[Title('Manage trips')] class extends Component {
             ->merge($this->assetPlanningIssues());
     }
 
+    private function findPlanningIssue(string $issueKey): ?array
+    {
+        return $this->allPlanningIssues()->firstWhere('key', $issueKey) ?? $this->fallbackPlanningIssue($issueKey);
+    }
+
+    private function fallbackPlanningIssue(string $issueKey): ?array
+    {
+        if (str_starts_with($issueKey, 'day-high-unbooked-')) {
+            return [
+                'key' => $issueKey,
+                'quick_fix' => 'mark_day_planned',
+                'day_id' => (int) Str::after($issueKey, 'day-high-unbooked-'),
+                'target_type' => 'day',
+            ];
+        }
+
+        if (str_starts_with($issueKey, 'slot-gap-')) {
+            $slot = $this->planningSlot((int) Str::after($issueKey, 'slot-gap-'));
+
+            return $slot ? [
+                'key' => $issueKey,
+                'quick_fix' => $this->slotPlanningQuickFix($slot),
+                'slot_id' => $slot->id,
+                'day_id' => $slot->day_node_id,
+                'target_type' => 'slot',
+            ] : null;
+        }
+
+        return null;
+    }
+
+    private function markPlanningDayPlanned(int $dayId): void
+    {
+        $day = DayNode::query()->whereKey($dayId)->first();
+
+        if (! $day || in_array($day->booking_status, ['booked', 'held'], true)) {
+            return;
+        }
+
+        $day->update(['booking_status' => 'planned']);
+        unset($this->days, $this->selectedDay, $this->planningIssues, $this->planningIssueCounts, $this->planningCategoryOptions);
+        $this->loadDayForm();
+
+        Flux::toast(variant: 'success', text: __('Day marked planned.'));
+    }
+
+    private function makePlanningSlotPrivate(int $slotId): void
+    {
+        $slot = $this->planningSlot($slotId);
+
+        if (! $slot) {
+            return;
+        }
+
+        $slot->update(['is_public' => false]);
+        unset($this->selectedDay, $this->selectedSlot, $this->planningIssues, $this->planningIssueCounts, $this->planningCategoryOptions);
+
+        if ($this->selectedSlotId === $slot->id) {
+            $this->selectSlot($slot->id);
+        }
+
+        Flux::toast(text: __('Slot made private.'));
+    }
+
+    private function copyPlanningSlotCoordinates(int $slotId): void
+    {
+        $slot = $this->planningSlot($slotId);
+        $subject = $slot?->subject;
+
+        if (! $slot || ! $subject || $subject instanceof TransportLeg || $subject->latitude === null || $subject->longitude === null) {
+            return;
+        }
+
+        $slot->update([
+            'latitude' => $subject->latitude,
+            'longitude' => $subject->longitude,
+        ]);
+        unset($this->selectedDay, $this->selectedSlot, $this->planningIssues, $this->planningIssueCounts, $this->planningCategoryOptions);
+
+        if ($this->selectedSlotId === $slot->id) {
+            $this->selectSlot($slot->id);
+        }
+
+        Flux::toast(variant: 'success', text: __('Copied coordinates from asset.'));
+    }
+
+    private function setPlanningSlotTimePlaceholder(int $slotId): void
+    {
+        $slot = $this->planningSlot($slotId);
+
+        if (! $slot || filled($slot->time_label)) {
+            return;
+        }
+
+        $slot->update(['time_label' => 'needs timing']);
+        unset($this->selectedDay, $this->selectedSlot, $this->planningIssues, $this->planningIssueCounts, $this->planningCategoryOptions);
+
+        if ($this->selectedSlotId === $slot->id) {
+            $this->selectSlot($slot->id);
+        }
+
+        Flux::toast(variant: 'success', text: __('Time placeholder added.'));
+    }
+
+    private function planningSlot(int $slotId): ?DayItineraryItem
+    {
+        return DayItineraryItem::query()
+            ->with('subject')
+            ->whereKey($slotId)
+            ->first();
+    }
+
     private function publicationPlanningIssues(): array
     {
         $issues = [];
@@ -910,6 +1062,8 @@ new #[Title('Manage trips')] class extends Component {
                 'title' => __('Published day has no public slots'),
                 'detail' => __('Day :day · :title', ['day' => $day->day_number, 'title' => $day->title]),
                 'action' => __('Open day'),
+                'quick_fix' => 'mark_day_planned',
+                'quick_fix_label' => __('Mark planned'),
                 'target_type' => 'day',
                 'day_id' => $day->id,
             ])
@@ -945,7 +1099,7 @@ new #[Title('Manage trips')] class extends Component {
         }
 
         return DayItineraryItem::query()
-            ->with('dayNode')
+            ->with(['dayNode', 'subject'])
             ->where('trip_variant_id', $this->selectedVariant->id)
             ->where(function ($query): void {
                 $query
@@ -970,6 +1124,8 @@ new #[Title('Manage trips')] class extends Component {
                 'title' => $this->slotPlanningTitle($slot),
                 'detail' => __('Day :day · :title', ['day' => $slot->dayNode->day_number, 'title' => $slot->title]),
                 'action' => __('Open slot'),
+                'quick_fix' => $this->slotPlanningQuickFix($slot),
+                'quick_fix_label' => $this->slotPlanningQuickFixLabel($slot),
                 'target_type' => 'slot',
                 'day_id' => $slot->day_node_id,
                 'slot_id' => $slot->id,
@@ -1028,6 +1184,39 @@ new #[Title('Manage trips')] class extends Component {
         }
 
         return __('Slot has no time label');
+    }
+
+    private function slotPlanningQuickFix(DayItineraryItem $slot): ?string
+    {
+        if ($slot->is_public && ($slot->latitude === null || $slot->longitude === null)) {
+            return $this->slotCanCopyCoordinates($slot) ? 'copy_slot_coordinates' : 'make_slot_private';
+        }
+
+        if (! $slot->time_label) {
+            return 'set_slot_time_placeholder';
+        }
+
+        return null;
+    }
+
+    private function slotPlanningQuickFixLabel(DayItineraryItem $slot): ?string
+    {
+        return match ($this->slotPlanningQuickFix($slot)) {
+            'copy_slot_coordinates' => __('Copy coords'),
+            'make_slot_private' => __('Make private'),
+            'set_slot_time_placeholder' => __('Needs timing'),
+            default => null,
+        };
+    }
+
+    private function slotCanCopyCoordinates(DayItineraryItem $slot): bool
+    {
+        $subject = $slot->subject;
+
+        return $subject
+            && ! ($subject instanceof TransportLeg)
+            && $subject->latitude !== null
+            && $subject->longitude !== null;
     }
 
     private function resetAssetAttachForm(Model $asset): void
@@ -1306,11 +1495,18 @@ new #[Title('Manage trips')] class extends Component {
                                         <div class="mt-2 font-medium text-zinc-950 dark:text-white">{{ $issue['title'] }}</div>
                                         <div class="mt-1 truncate text-sm text-zinc-500">{{ $issue['detail'] }}</div>
                                     </div>
-                                    @if (($issue['target_type'] ?? null) !== 'trip')
-                                        <flux:button size="xs" wire:click="openPlanningIssue('{{ $issue['key'] }}')">
-                                            {{ $issue['action'] }}
-                                        </flux:button>
-                                    @endif
+                                    <div class="flex flex-wrap gap-2">
+                                        @if (($issue['target_type'] ?? null) !== 'trip')
+                                            <flux:button size="xs" wire:click="openPlanningIssue('{{ $issue['key'] }}')">
+                                                {{ $issue['action'] }}
+                                            </flux:button>
+                                        @endif
+                                        @if (filled($issue['quick_fix'] ?? null))
+                                            <flux:button size="xs" variant="primary" wire:click="quickFixPlanningIssue('{{ $issue['key'] }}')">
+                                                {{ $issue['quick_fix_label'] }}
+                                            </flux:button>
+                                        @endif
+                                    </div>
                                 </div>
                             </div>
                         @empty

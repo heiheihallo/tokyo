@@ -7,6 +7,7 @@ use App\Models\DayTask;
 use App\Models\FoodSpot;
 use App\Models\TransportLeg;
 use App\Models\Trip;
+use App\Models\TripVariant;
 use App\Models\User;
 use Illuminate\Support\Facades\Artisan;
 use Livewire\Livewire;
@@ -618,6 +619,8 @@ test('trip management planning health detects gaps and opens targets', function 
         ->assertSee('Public slot is missing map coordinates')
         ->assertSee('Published day has no public slots')
         ->assertSee('AAA Planning Health Hotel')
+        ->assertSee('Mark planned')
+        ->assertSee('Make private')
         ->set('planningSeverityFilter', 'high')
         ->assertSee('High-priority day is not booked')
         ->assertDontSee('Public slot is missing map coordinates')
@@ -636,6 +639,114 @@ test('trip management planning health detects gaps and opens targets', function 
         ->assertSet('assetTab', 'accommodations')
         ->assertSet('selectedAssetId', $asset->id)
         ->assertSee('Edit shared asset');
+});
+
+test('trip management planning health quick fixes safe issues', function () {
+    $user = User::factory()->create();
+    $trip = Trip::query()->create([
+        'slug' => 'quick-fix-trip',
+        'name' => 'Quick Fix Trip',
+        'currency_primary' => 'NOK',
+        'currency_secondary' => 'JPY',
+        'metadata' => [],
+    ]);
+    $variant = TripVariant::query()->create([
+        'trip_id' => $trip->id,
+        'slug' => 'quick-fix-timeline',
+        'name' => 'Quick Fix Timeline',
+        'budget_scenario' => 'value',
+        'is_default' => true,
+        'sort_order' => 10,
+        'overrides' => [],
+    ]);
+    $day = DayNode::query()->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'stable_key' => 'quick-fix-day',
+        'day_number' => 1,
+        'location' => 'Tokyo',
+        'title' => 'Quick fix day',
+        'node_types' => ['stay'],
+        'booking_priority' => 'high',
+        'booking_status' => 'unbooked',
+        'details' => [],
+    ]);
+    $asset = Accommodation::query()->create([
+        'stable_key' => 'quick-fix-hotel',
+        'name' => 'Quick Fix Hotel',
+        'city' => 'Tokyo',
+        'country' => 'Japan',
+        'latitude' => '35.6812000',
+        'longitude' => '139.7671000',
+    ]);
+    $noCoordinateAsset = Accommodation::query()->create([
+        'stable_key' => 'quick-fix-no-coordinate-hotel',
+        'name' => 'Quick Fix No Coordinate Hotel',
+        'city' => 'Tokyo',
+        'country' => 'Japan',
+    ]);
+
+    $coordinateSlot = DayItineraryItem::query()->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'day_node_id' => $day->id,
+        'stable_key' => 'quick-fix-coordinate-slot',
+        'item_type' => 'stay',
+        'time_label' => 'night',
+        'title' => 'Needs copied coordinates',
+        'subject_type' => $asset::class,
+        'subject_id' => $asset->id,
+        'is_public' => true,
+        'sort_order' => 10,
+        'details' => [],
+    ]);
+    $privateSlot = DayItineraryItem::query()->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'day_node_id' => $day->id,
+        'stable_key' => 'quick-fix-private-slot',
+        'item_type' => 'stay',
+        'time_label' => 'later',
+        'title' => 'Needs privacy fallback',
+        'subject_type' => $noCoordinateAsset::class,
+        'subject_id' => $noCoordinateAsset->id,
+        'is_public' => true,
+        'sort_order' => 20,
+        'details' => [],
+    ]);
+    $timeSlot = DayItineraryItem::query()->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'day_node_id' => $day->id,
+        'stable_key' => 'quick-fix-time-slot',
+        'item_type' => 'stay',
+        'title' => 'Needs time placeholder',
+        'subject_type' => $asset::class,
+        'subject_id' => $asset->id,
+        'latitude' => '35.6812000',
+        'longitude' => '139.7671000',
+        'is_public' => false,
+        'sort_order' => 30,
+        'details' => [],
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage')
+        ->set('selectedTripId', $trip->id)
+        ->set('selectedVariantId', $variant->id)
+        ->assertSee('Planning health')
+        ->call('quickFixPlanningIssue', 'day-high-unbooked-'.$day->id)
+        ->call('quickFixPlanningIssue', 'slot-gap-'.$coordinateSlot->id)
+        ->call('quickFixPlanningIssue', 'slot-gap-'.$privateSlot->id)
+        ->call('quickFixPlanningIssue', 'slot-gap-'.$timeSlot->id)
+        ->assertHasNoErrors();
+
+    expect($day->fresh()->booking_status)->toBe('planned');
+    expect($coordinateSlot->fresh())
+        ->latitude->toBe('35.6812000')
+        ->longitude->toBe('139.7671000');
+    expect($privateSlot->fresh()->is_public)->toBeFalse();
+    expect($timeSlot->fresh()->time_label)->toBe('needs timing');
 });
 
 test('public day show page hides admin only planning data', function () {
