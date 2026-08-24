@@ -579,6 +579,50 @@ test('trip management can attach and detach shared assets from the selected day'
     expect(DayItineraryItem::query()->whereKey($slot->id)->exists())->toBeFalse();
 });
 
+test('trip management planning health detects gaps and opens targets', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-6')->firstOrFail();
+    $day->update(['booking_priority' => 'high', 'booking_status' => 'unbooked']);
+
+    $slot = $day->itineraryItems()->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'stable_key' => 'planning-health-gap-slot',
+        'item_type' => 'activity',
+        'title' => 'Planning health gap slot',
+        'is_public' => true,
+        'sort_order' => 1700,
+        'details' => [],
+    ]);
+
+    $asset = Accommodation::query()->create([
+        'stable_key' => 'aaa-planning-health-hotel',
+        'name' => 'AAA Planning Health Hotel',
+        'city' => 'Tokyo',
+        'country' => 'Japan',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage')
+        ->set('selectedVariantId', $variant->id)
+        ->assertSee('Planning health')
+        ->assertSee('High-priority day is not booked')
+        ->assertSee('Public slot is missing map coordinates')
+        ->assertSee('AAA Planning Health Hotel')
+        ->call('openPlanningIssue', 'slot-gap-'.$slot->id)
+        ->assertSet('selectedDayId', $day->id)
+        ->assertSet('selectedSlotId', $slot->id)
+        ->assertSee('Planning health gap slot')
+        ->call('openPlanningIssue', 'asset-gap-accommodations-'.$asset->id)
+        ->assertSet('assetTab', 'accommodations')
+        ->assertSet('selectedAssetId', $asset->id)
+        ->assertSee('Edit shared asset');
+});
+
 test('public day show page hides admin only planning data', function () {
     Artisan::call('trip:import-japan-reference');
 

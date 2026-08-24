@@ -545,6 +545,33 @@ new #[Title('Manage trips')] class extends Component {
         unset($this->selectedDay);
     }
 
+    public function openPlanningIssue(string $issueKey): void
+    {
+        $issue = collect($this->planningIssues)->firstWhere('key', $issueKey);
+
+        if (! $issue) {
+            return;
+        }
+
+        if ($issue['target_type'] === 'slot') {
+            $this->selectDay($issue['day_id']);
+            $this->selectSlot($issue['slot_id']);
+
+            return;
+        }
+
+        if ($issue['target_type'] === 'day') {
+            $this->selectDay($issue['day_id']);
+
+            return;
+        }
+
+        if ($issue['target_type'] === 'asset') {
+            $this->assetTab = $issue['asset_tab'];
+            $this->selectAsset($issue['asset_id']);
+        }
+    }
+
     #[Computed]
     public function trips(): EloquentCollection
     {
@@ -648,6 +675,36 @@ new #[Title('Manage trips')] class extends Component {
     }
 
     #[Computed]
+    public function planningIssues(): array
+    {
+        if (! $this->selectedTrip) {
+            return [];
+        }
+
+        return collect()
+            ->merge($this->publicationPlanningIssues())
+            ->merge($this->dayPlanningIssues())
+            ->merge($this->slotPlanningIssues())
+            ->merge($this->assetPlanningIssues())
+            ->take(16)
+            ->values()
+            ->all();
+    }
+
+    #[Computed]
+    public function planningIssueCounts(): array
+    {
+        $issues = collect($this->planningIssues);
+
+        return [
+            'total' => $issues->count(),
+            'high' => $issues->where('severity', 'high')->count(),
+            'medium' => $issues->where('severity', 'medium')->count(),
+            'low' => $issues->where('severity', 'low')->count(),
+        ];
+    }
+
+    #[Computed]
     public function slotSubjects(): array
     {
         return [
@@ -714,6 +771,15 @@ new #[Title('Manage trips')] class extends Component {
             blank($asset->reservation_url ?? null) ? __('No URL') : null,
             blank($asset->notes ?? null) ? __('No notes') : null,
         ])->filter()->values()->all();
+    }
+
+    public function planningSeverityColor(string $severity): string
+    {
+        return match ($severity) {
+            'high' => 'red',
+            'medium' => 'amber',
+            default => 'zinc',
+        };
     }
 
     private function loadDayForm(): void
@@ -786,6 +852,135 @@ new #[Title('Manage trips')] class extends Component {
         }
 
         return $rules;
+    }
+
+    private function publicationPlanningIssues(): array
+    {
+        $issues = [];
+
+        if ($this->selectedTrip?->is_public && $this->selectedTrip->variants()->where('is_public', true)->doesntExist()) {
+            $issues[] = [
+                'key' => 'trip-public-no-variants-'.$this->selectedTrip->id,
+                'severity' => 'high',
+                'category' => __('Publication'),
+                'title' => __('Published trip has no public timelines'),
+                'detail' => __('Show at least one timeline or unpublish the trip.'),
+                'action' => __('Review publishing'),
+                'target_type' => 'trip',
+            ];
+        }
+
+        return $issues;
+    }
+
+    private function dayPlanningIssues(): array
+    {
+        return $this->days
+            ->where('booking_priority', 'high')
+            ->whereNotIn('booking_status', ['booked', 'held'])
+            ->take(5)
+            ->map(fn (DayNode $day): array => [
+                'key' => 'day-high-unbooked-'.$day->id,
+                'severity' => 'high',
+                'category' => __('Booking'),
+                'title' => __('High-priority day is not booked'),
+                'detail' => __('Day :day · :title', ['day' => $day->day_number, 'title' => $day->title]),
+                'action' => __('Open day'),
+                'target_type' => 'day',
+                'day_id' => $day->id,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function slotPlanningIssues(): array
+    {
+        if (! $this->selectedVariant) {
+            return [];
+        }
+
+        return DayItineraryItem::query()
+            ->with('dayNode')
+            ->where('trip_variant_id', $this->selectedVariant->id)
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('subject_id')
+                    ->orWhereNull('time_label')
+                    ->orWhere(function ($query): void {
+                        $query->where('is_public', true)
+                            ->where(function ($query): void {
+                                $query->whereNull('latitude')->orWhereNull('longitude');
+                            });
+                    });
+            })
+            ->orderBy('day_node_id')
+            ->orderBy('sort_order')
+            ->limit(8)
+            ->get()
+            ->map(fn (DayItineraryItem $slot): array => [
+                'key' => 'slot-gap-'.$slot->id,
+                'severity' => $slot->is_public && ($slot->latitude === null || $slot->longitude === null) ? 'medium' : 'low',
+                'category' => __('Timeline'),
+                'title' => $this->slotPlanningTitle($slot),
+                'detail' => __('Day :day · :title', ['day' => $slot->dayNode->day_number, 'title' => $slot->title]),
+                'action' => __('Open slot'),
+                'target_type' => 'slot',
+                'day_id' => $slot->day_node_id,
+                'slot_id' => $slot->id,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function assetPlanningIssues(): array
+    {
+        return collect([
+            'accommodations' => Accommodation::class,
+            'activities' => Activity::class,
+            'food' => FoodSpot::class,
+            'transport' => TransportLeg::class,
+        ])->flatMap(function (string $model, string $assetTab): array {
+            return $model::query()
+                ->where(function ($query) use ($model): void {
+                    $query->whereNull('notes');
+
+                    if ($model !== FoodSpot::class) {
+                        $query->orWhereNull('reservation_url');
+                    }
+
+                    if ($model !== TransportLeg::class) {
+                        $query->orWhereNull('latitude')->orWhereNull('longitude');
+                    }
+                })
+                ->orderBy($model === TransportLeg::class ? 'route_label' : 'name')
+                ->limit(2)
+                ->get()
+                ->map(fn (Model $asset): array => [
+                    'key' => 'asset-gap-'.$assetTab.'-'.$asset->id,
+                    'severity' => 'low',
+                    'category' => __('Assets'),
+                    'title' => __('Shared asset needs cleanup'),
+                    'detail' => $this->assetLabel($asset),
+                    'action' => __('Open asset'),
+                    'target_type' => 'asset',
+                    'asset_tab' => $assetTab,
+                    'asset_id' => $asset->id,
+                ])
+                ->all();
+        })->values()->all();
+    }
+
+    private function slotPlanningTitle(DayItineraryItem $slot): string
+    {
+        if ($slot->is_public && ($slot->latitude === null || $slot->longitude === null)) {
+            return __('Public slot is missing map coordinates');
+        }
+
+        if (! $slot->subject_id) {
+            return __('Slot is not linked to a shared asset');
+        }
+
+        return __('Slot has no time label');
     }
 
     private function resetAssetAttachForm(Model $asset): void
@@ -1010,6 +1205,59 @@ new #[Title('Manage trips')] class extends Component {
             </div>
 
             <div class="space-y-6">
+                <flux:card>
+                    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                            <flux:heading>{{ __('Planning health') }}</flux:heading>
+                            <flux:text>{{ __('Actionable gaps for the selected trip and timeline.') }}</flux:text>
+                        </div>
+                        <div class="grid grid-cols-4 gap-2 text-center text-sm">
+                            <div class="rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-700">
+                                <div class="font-semibold text-zinc-950 dark:text-white">{{ $this->planningIssueCounts['total'] }}</div>
+                                <div class="text-xs text-zinc-500">{{ __('Total') }}</div>
+                            </div>
+                            <div class="rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-700">
+                                <div class="font-semibold text-red-600">{{ $this->planningIssueCounts['high'] }}</div>
+                                <div class="text-xs text-zinc-500">{{ __('High') }}</div>
+                            </div>
+                            <div class="rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-700">
+                                <div class="font-semibold text-amber-600">{{ $this->planningIssueCounts['medium'] }}</div>
+                                <div class="text-xs text-zinc-500">{{ __('Medium') }}</div>
+                            </div>
+                            <div class="rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-700">
+                                <div class="font-semibold text-zinc-600 dark:text-zinc-300">{{ $this->planningIssueCounts['low'] }}</div>
+                                <div class="text-xs text-zinc-500">{{ __('Low') }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-5 grid gap-3 lg:grid-cols-2">
+                        @forelse ($this->planningIssues as $issue)
+                            <div class="rounded-lg border border-zinc-200 p-4 dark:border-zinc-700" wire:key="planning-issue-{{ $issue['key'] }}">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <flux:badge size="sm" color="{{ $this->planningSeverityColor($issue['severity']) }}">{{ $issue['severity'] }}</flux:badge>
+                                            <span class="text-xs font-medium uppercase text-zinc-500">{{ $issue['category'] }}</span>
+                                        </div>
+                                        <div class="mt-2 font-medium text-zinc-950 dark:text-white">{{ $issue['title'] }}</div>
+                                        <div class="mt-1 truncate text-sm text-zinc-500">{{ $issue['detail'] }}</div>
+                                    </div>
+                                    @if (($issue['target_type'] ?? null) !== 'trip')
+                                        <flux:button size="xs" wire:click="openPlanningIssue('{{ $issue['key'] }}')">
+                                            {{ $issue['action'] }}
+                                        </flux:button>
+                                    @endif
+                                </div>
+                            </div>
+                        @empty
+                            <div class="rounded-lg border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">
+                                {{ __('No planning gaps found for the current selection.') }}
+                            </div>
+                        @endforelse
+                    </div>
+                </flux:card>
+
                 <flux:card>
                     <div class="flex flex-col gap-4 lg:flex-row lg:items-start">
                         <div class="lg:w-64">
