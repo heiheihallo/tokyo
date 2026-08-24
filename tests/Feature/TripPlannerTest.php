@@ -776,3 +776,92 @@ test('public day show page hides admin only planning data', function () {
         ->assertDontSee('private.example.test')
         ->assertDontSee('Modeled cost');
 });
+
+test('authenticated admins can preview unpublished public pages without exposing private slots', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $trip->unpublish();
+    $trip->variants()->get()->each->unpublish();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
+
+    $day->itineraryItems()->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'stable_key' => 'preview-private-slot',
+        'item_type' => 'note',
+        'title' => 'Preview private slot',
+        'is_public' => false,
+        'sort_order' => 2000,
+        'details' => [],
+    ]);
+
+    $previewUrl = route('trips.public', [
+        'trip' => $trip,
+        'timeline' => $variant->slug,
+        'day' => $day->stable_key,
+        'preview' => 1,
+    ]);
+
+    $this->get($previewUrl)->assertNotFound();
+
+    $this->actingAs($user)
+        ->get($previewUrl)
+        ->assertOk()
+        ->assertSee('Preview mode')
+        ->assertSee($variant->name)
+        ->assertSee('Tokyo Station first easy day')
+        ->assertDontSee('Preview private slot');
+});
+
+test('public timeline preserves selected timeline day and slot query state', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $trip->unpublish();
+    $trip->variants()->get()->each->unpublish();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
+    $slot = $day->publicItineraryItems()->firstOrFail();
+    $trip->publish();
+    $variant->publish();
+
+    $this->get(route('trips.public', [
+        'trip' => $trip,
+        'timeline' => $variant->slug,
+        'day' => $day->stable_key,
+        'slot' => $slot->stable_key,
+    ]))
+        ->assertOk()
+        ->assertSee('Share current view')
+        ->assertSee($slot->title)
+        ->assertSee($slot->summary)
+        ->assertSee('slot='.$slot->stable_key, false);
+});
+
+test('public day page expands selected slot and links back to timeline state', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $trip->unpublish();
+    $trip->variants()->get()->each->unpublish();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
+    $slot = $day->publicItineraryItems()->firstOrFail();
+    $trip->publish();
+    $variant->publish();
+
+    $this->get(route('trips.public.days.show', [
+        'trip' => $trip,
+        'variant' => $variant,
+        'dayNode' => $day,
+        'slot' => $slot->stable_key,
+    ]))
+        ->assertOk()
+        ->assertSee('Share day')
+        ->assertSee($slot->summary)
+        ->assertSee('day='.$day->stable_key, false)
+        ->assertSee('slot='.$slot->stable_key, false);
+});

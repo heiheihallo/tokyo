@@ -1,23 +1,29 @@
 <?php
 
 use App\Models\DayNode;
+use App\Models\DayItineraryItem;
 use App\Models\Trip;
 use App\Models\TripVariant;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 
 new #[Layout('layouts.public')] #[Title('Day details')] class extends Component {
     public int $tripId;
     public int $variantId;
     public int $dayNodeId;
+    #[Url(as: 'slot', except: '')]
+    public string $selectedSlotKey = '';
+    #[Url(as: 'preview', except: false)]
+    public bool $preview = false;
 
     public function mount(Trip $trip, TripVariant $variant, DayNode $dayNode): void
     {
-        abort_unless($trip->is_public, 404);
-        abort_unless($variant->trip_id === $trip->id && $variant->is_public, 404);
+        abort_unless($trip->is_public || $this->canPreview(), 404);
+        abort_unless($variant->trip_id === $trip->id && ($variant->is_public || $this->canPreview()), 404);
         abort_unless($dayNode->trip_id === $trip->id && $dayNode->trip_variant_id === $variant->id, 404);
 
         $this->tripId = $trip->id;
@@ -29,14 +35,15 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
     public function trip(): Trip
     {
         return Trip::query()
-            ->where('is_public', true)
+            ->when(! $this->canPreview(), fn ($query) => $query->where('is_public', true))
             ->findOrFail($this->tripId);
     }
 
     #[Computed]
     public function variant(): TripVariant
     {
-        return $this->trip->publishedVariants()->findOrFail($this->variantId);
+        return ($this->canPreview() ? $this->trip->variants() : $this->trip->publishedVariants())
+            ->findOrFail($this->variantId);
     }
 
     #[Computed]
@@ -45,6 +52,16 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
         return $this->variant->dayNodes()
             ->with(['accommodations', 'transportLegs', 'activities', 'foodSpots', 'publicItineraryItems.subject'])
             ->findOrFail($this->dayNodeId);
+    }
+
+    #[Computed]
+    public function selectedSlot(): ?DayItineraryItem
+    {
+        if ($this->selectedSlotKey === '') {
+            return null;
+        }
+
+        return $this->day->publicItineraryItems->firstWhere('stable_key', $this->selectedSlotKey);
     }
 
     #[Computed]
@@ -99,6 +116,7 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
                     'lng' => (float) $longitude,
                     'route_group' => 'day',
                     'sequence' => $slot->sort_order,
+                    'selected' => $this->selectedSlot?->id === $slot->id,
                 ];
             })
             ->filter()
@@ -118,6 +136,7 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
                     'lng' => (float) $item->longitude,
                     'route_group' => 'day',
                     'sequence' => 1,
+                    'selected' => false,
                 ])
                 ->values()
                 ->all();
@@ -149,6 +168,38 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
         };
     }
 
+    public function selectSlot(string $slotKey): void
+    {
+        $this->selectedSlotKey = $this->selectedSlotKey === $slotKey ? '' : $slotKey;
+    }
+
+    public function canPreview(): bool
+    {
+        return $this->preview && auth()->check();
+    }
+
+    public function timelineUrl(): string
+    {
+        return route('trips.public', array_filter([
+            'trip' => $this->trip,
+            'timeline' => $this->variant->slug,
+            'day' => $this->day->stable_key,
+            'slot' => $this->selectedSlotKey ?: null,
+            'preview' => $this->canPreview() ? 1 : null,
+        ], fn ($value) => $value !== null));
+    }
+
+    public function dayUrl(?DayNode $day = null): string
+    {
+        return route('trips.public.days.show', array_filter([
+            'trip' => $this->trip,
+            'variant' => $this->variant,
+            'dayNode' => $day ?? $this->day,
+            'slot' => $day && $day->id !== $this->day->id ? null : ($this->selectedSlotKey ?: null),
+            'preview' => $this->canPreview() ? 1 : null,
+        ], fn ($value) => $value !== null));
+    }
+
     public function nodeTypesLabel(): string
     {
         return collect($this->day->node_types)->map(fn (string $type) => ucfirst($type))->join(' · ');
@@ -158,9 +209,19 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
 <main class="min-h-screen bg-white dark:bg-zinc-950">
     <header class="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950">
         <div class="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-            <flux:button size="sm" icon="arrow-left" :href="route('trips.public', $this->trip)">
+            <div class="flex flex-wrap items-center gap-2">
+                <flux:button size="sm" icon="arrow-left" :href="$this->timelineUrl()">
                 {{ __('Back to timeline') }}
-            </flux:button>
+                </flux:button>
+
+                <flux:button size="sm" icon="link" :href="$this->dayUrl()">
+                    {{ __('Share day') }}
+                </flux:button>
+
+                @if ($this->canPreview())
+                    <flux:badge color="amber">{{ __('Preview mode') }}</flux:badge>
+                @endif
+            </div>
 
             <div class="mt-6 max-w-3xl">
                 <div class="text-sm font-medium uppercase tracking-wide text-teal-700 dark:text-teal-300">
@@ -202,7 +263,13 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
                                 </flux:timeline.indicator>
 
                                 <flux:timeline.content>
-                                    <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800">
+                                    <button
+                                        id="slot-{{ $slot->stable_key }}"
+                                        wire:key="public-day-slot-{{ $slot->id }}"
+                                        type="button"
+                                        wire:click="selectSlot('{{ $slot->stable_key }}')"
+                                        class="block w-full rounded-lg border p-4 text-left transition hover:border-teal-600 {{ $this->selectedSlot?->id === $slot->id ? 'border-teal-700 bg-teal-50 dark:border-teal-300 dark:bg-teal-950/40' : 'border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800' }}"
+                                    >
                                         <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                             <div>
                                                 <div class="flex flex-wrap items-center gap-2">
@@ -218,10 +285,24 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
                                             </div>
                                         </div>
 
-                                        @if ($slot->summary)
-                                            <p class="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">{{ $slot->summary }}</p>
+                                        @if ($this->selectedSlot?->id === $slot->id)
+                                            <div class="mt-4 rounded-lg bg-white p-3 text-sm leading-6 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
+                                                @if ($slot->summary)
+                                                    <p>{{ $slot->summary }}</p>
+                                                @endif
+
+                                                @if ($slot->subject)
+                                                    <div class="mt-3 font-medium text-zinc-950 dark:text-white">
+                                                        {{ $slot->subject->name ?? $slot->subject->route_label }}
+                                                    </div>
+                                                @endif
+
+                                                @if ($slot->location_label)
+                                                    <div class="mt-1">{{ $slot->location_label }}</div>
+                                                @endif
+                                            </div>
                                         @endif
-                                    </div>
+                                    </button>
                                 </flux:timeline.content>
                             </flux:timeline.item>
                         @empty
@@ -340,6 +421,7 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
                     wire:ignore
                     x-data
                     x-init="$nextTick(() => window.renderTripMap?.($refs.map, @js($this->mapPayload)))"
+                    x-effect="$nextTick(() => window.renderTripMap?.($refs.map, @js($this->mapPayload)))"
                 >
                     <div x-ref="map" class="h-80 overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-700"></div>
                 </div>
@@ -357,14 +439,14 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
                     <h2 class="text-lg font-semibold text-zinc-950 dark:text-white">{{ __('Nearby days') }}</h2>
                     <div class="mt-4 space-y-3 text-sm">
                         @if ($this->previousDay)
-                            <a class="block rounded-lg bg-zinc-50 p-3 hover:bg-zinc-100 dark:bg-zinc-800 dark:hover:bg-zinc-700" href="{{ route('trips.public.days.show', [$this->trip, $this->variant, $this->previousDay]) }}">
+                            <a class="block rounded-lg bg-zinc-50 p-3 hover:bg-zinc-100 dark:bg-zinc-800 dark:hover:bg-zinc-700" href="{{ $this->dayUrl($this->previousDay) }}">
                                 <div class="text-zinc-500">{{ __('Previous') }}</div>
                                 <div class="font-medium text-zinc-950 dark:text-white">{{ __('Day :day', ['day' => $this->previousDay->day_number]) }} · {{ $this->previousDay->title }}</div>
                             </a>
                         @endif
 
                         @if ($this->nextDay)
-                            <a class="block rounded-lg bg-zinc-50 p-3 hover:bg-zinc-100 dark:bg-zinc-800 dark:hover:bg-zinc-700" href="{{ route('trips.public.days.show', [$this->trip, $this->variant, $this->nextDay]) }}">
+                            <a class="block rounded-lg bg-zinc-50 p-3 hover:bg-zinc-100 dark:bg-zinc-800 dark:hover:bg-zinc-700" href="{{ $this->dayUrl($this->nextDay) }}">
                                 <div class="text-zinc-500">{{ __('Next') }}</div>
                                 <div class="font-medium text-zinc-950 dark:text-white">{{ __('Day :day', ['day' => $this->nextDay->day_number]) }} · {{ $this->nextDay->title }}</div>
                             </a>

@@ -14,6 +14,34 @@ window.renderTripMap = (element, payload) => {
     const points = payload.points ?? [];
     const routes = payload.routes ?? [];
     const map = L.map(element, { scrollWheelZoom: false });
+    const colors = {
+        stay: '#0f766e',
+        accommodation: '#0f766e',
+        move: '#0284c7',
+        travel: '#0284c7',
+        food: '#be123c',
+        foodspot: '#be123c',
+        activity: '#b45309',
+        buffer: '#52525b',
+        route: '#0f766e',
+    };
+    const escapeHtml = (value) => String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    const markerIcon = (point) => {
+        const color = colors[String(point.category ?? '').toLowerCase()] ?? '#0f766e';
+        const size = point.selected ? 18 : 12;
+
+        return L.divIcon({
+            className: '',
+            html: `<span style="display:block;width:${size}px;height:${size}px;border-radius:9999px;background:${color};border:3px solid white;box-shadow:0 1px 8px rgb(39 39 42 / 35%);"></span>`,
+            iconSize: [size, size],
+            iconAnchor: [size / 2, size / 2],
+        });
+    };
 
     element._tripMap = map;
 
@@ -29,9 +57,9 @@ window.renderTripMap = (element, payload) => {
 
         bounds.push(latLng);
 
-        L.marker(latLng)
+        L.marker(latLng, { icon: markerIcon(point), zIndexOffset: point.selected ? 1000 : 0 })
             .addTo(map)
-            .bindPopup(`<strong>${point.name}</strong><br>${point.category}`);
+            .bindPopup(`<strong>${escapeHtml(point.name)}</strong><br>${escapeHtml(point.category)}`);
     });
 
     routes.forEach((route) => {
