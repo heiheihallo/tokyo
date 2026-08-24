@@ -6,6 +6,7 @@ use Database\Factories\DayItineraryItemFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class DayItineraryItem extends Model
@@ -64,5 +65,12 @@ class DayItineraryItem extends Model
     public function subject(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    public function journalEntries(): HasMany
+    {
+        return $this->hasMany(JournalEntry::class)
+            ->orderByDesc('happened_at')
+            ->orderByDesc('created_at');
     }
 }

@@ -52,6 +52,13 @@ class Trip extends Model
         return $this->hasMany(DayNode::class)->orderBy('day_number');
     }
 
+    public function journalEntries(): HasMany
+    {
+        return $this->hasMany(JournalEntry::class)
+            ->orderByDesc('happened_at')
+            ->orderByDesc('created_at');
+    }
+
     public function defaultVariant(): ?TripVariant
     {
         return $this->variants()->where('is_default', true)->first()

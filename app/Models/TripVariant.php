@@ -58,6 +58,13 @@ class TripVariant extends Model
         return $this->hasMany(RoutePoint::class)->orderBy('sequence');
     }
 
+    public function journalEntries(): HasMany
+    {
+        return $this->hasMany(JournalEntry::class)
+            ->orderByDesc('happened_at')
+            ->orderByDesc('created_at');
+    }
+
     public function publish(): void
     {
         $this->forceFill([

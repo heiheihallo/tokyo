@@ -2,6 +2,7 @@
 
 use App\Models\DayNode;
 use App\Models\DayItineraryItem;
+use App\Models\JournalEntry;
 use App\Models\Trip;
 use App\Models\TripVariant;
 use Illuminate\Support\Collection;
@@ -183,6 +184,22 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
             ->values();
     }
 
+    #[Computed]
+    public function journalEntries(): Collection
+    {
+        return $this->day->journalEntries()
+            ->visibleTo(auth()->user())
+            ->with('dayItineraryItem')
+            ->get();
+    }
+
+    public function slotJournalEntries(DayItineraryItem $slot): Collection
+    {
+        return $this->journalEntries
+            ->filter(fn (JournalEntry $entry): bool => $entry->day_itinerary_item_id === $slot->id)
+            ->values();
+    }
+
     public function slotColor(string $type): string
     {
         return match ($type) {
@@ -326,6 +343,21 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
                                                 @if ($slot->location_label)
                                                     <div class="mt-1">{{ $slot->location_label }}</div>
                                                 @endif
+
+                                                @if ($this->slotJournalEntries($slot)->isNotEmpty())
+                                                    <div class="mt-4 space-y-2">
+                                                        <div class="font-medium text-zinc-950 dark:text-white">{{ __('Updates') }}</div>
+                                                        @foreach ($this->slotJournalEntries($slot) as $entry)
+                                                            <article class="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800">
+                                                                <div class="text-xs text-zinc-500">{{ $entry->happened_at?->format('M j, H:i') }}</div>
+                                                                <div class="mt-1 font-medium text-zinc-950 dark:text-white">{{ $entry->title }}</div>
+                                                                @if ($entry->excerpt)
+                                                                    <p class="mt-1">{{ $entry->excerpt }}</p>
+                                                                @endif
+                                                            </article>
+                                                        @endforeach
+                                                    </div>
+                                                @endif
                                             </div>
                                         @endif
                                     </button>
@@ -344,6 +376,36 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
                     </flux:timeline>
                 </div>
             </section>
+
+            @if ($this->journalEntries->isNotEmpty())
+                <section class="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+                    <h2 class="text-lg font-semibold text-zinc-950 dark:text-white">{{ __('Journal updates') }}</h2>
+                    <div class="mt-4 grid gap-3">
+                        @foreach ($this->journalEntries as $entry)
+                            <article class="rounded-lg bg-zinc-50 p-4 dark:bg-zinc-800">
+                                <div class="flex flex-wrap items-center gap-2 text-sm text-zinc-500">
+                                    @if ($entry->happened_at)
+                                        <span>{{ $entry->happened_at->format('M j, Y H:i') }}</span>
+                                    @endif
+                                    @if ($entry->location_label)
+                                        <span>{{ $entry->location_label }}</span>
+                                    @endif
+                                    @if ($entry->dayItineraryItem)
+                                        <span>{{ $entry->dayItineraryItem->title }}</span>
+                                    @endif
+                                </div>
+                                <h3 class="mt-2 font-semibold text-zinc-950 dark:text-white">{{ $entry->title }}</h3>
+                                @if ($entry->excerpt)
+                                    <p class="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">{{ $entry->excerpt }}</p>
+                                @endif
+                                @if ($entry->body)
+                                    <div class="mt-3 whitespace-pre-line text-sm leading-6 text-zinc-600 dark:text-zinc-300">{{ $entry->body }}</div>
+                                @endif
+                            </article>
+                        @endforeach
+                    </div>
+                </section>
+            @endif
 
             <section class="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
                 <h2 class="text-lg font-semibold text-zinc-950 dark:text-white">{{ __('Route and movement') }}</h2>

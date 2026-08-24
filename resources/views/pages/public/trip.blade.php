@@ -2,6 +2,7 @@
 
 use App\Models\DayNode;
 use App\Models\DayItineraryItem;
+use App\Models\JournalEntry;
 use App\Models\Trip;
 use App\Models\TripVariant;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -147,6 +148,27 @@ new #[Layout('layouts.public')] #[Title('Trip timeline')] class extends Componen
         return ['points' => $points, 'routes' => $routes];
     }
 
+    #[Computed]
+    public function journalEntries(): EloquentCollection
+    {
+        return $this->trip->journalEntries()
+            ->visibleTo(auth()->user())
+            ->where(function ($query): void {
+                $query->whereNull('trip_variant_id')
+                    ->orWhere('trip_variant_id', $this->variant->id);
+            })
+            ->with(['dayNode', 'dayItineraryItem'])
+            ->limit(8)
+            ->get();
+    }
+
+    public function dayJournalEntries(DayNode $day): EloquentCollection
+    {
+        return $this->journalEntries
+            ->filter(fn (JournalEntry $entry): bool => $entry->day_node_id === $day->id)
+            ->values();
+    }
+
     public function canPreview(): bool
     {
         return $this->preview && auth()->check();
@@ -243,6 +265,35 @@ new #[Layout('layouts.public')] #[Title('Trip timeline')] class extends Componen
                     </div>
                 </div>
             @else
+                @if ($this->journalEntries->isNotEmpty())
+                    <section class="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+                        <h2 class="text-lg font-semibold text-zinc-950 dark:text-white">{{ __('Latest updates') }}</h2>
+                        <div class="mt-4 grid gap-3">
+                            @foreach ($this->journalEntries->take(3) as $entry)
+                                <article class="rounded-lg bg-zinc-50 p-4 dark:bg-zinc-800">
+                                    <div class="flex flex-wrap items-center gap-2 text-sm text-zinc-500">
+                                        @if ($entry->happened_at)
+                                            <span>{{ $entry->happened_at->format('M j, Y H:i') }}</span>
+                                        @endif
+                                        @if ($entry->location_label)
+                                            <span>{{ $entry->location_label }}</span>
+                                        @endif
+                                        @if ($entry->dayNode)
+                                            <span>{{ __('Day :day', ['day' => $entry->dayNode->day_number]) }}</span>
+                                        @endif
+                                    </div>
+                                    <h3 class="mt-2 font-semibold text-zinc-950 dark:text-white">{{ $entry->title }}</h3>
+                                    @if ($entry->excerpt)
+                                        <p class="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">{{ $entry->excerpt }}</p>
+                                    @elseif ($entry->body)
+                                        <p class="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">{{ Str::limit($entry->body, 220) }}</p>
+                                    @endif
+                                </article>
+                            @endforeach
+                        </div>
+                    </section>
+                @endif
+
                 <div
                     x-data
                     x-init="$nextTick(() => {
@@ -339,6 +390,30 @@ new #[Layout('layouts.public')] #[Title('Trip timeline')] class extends Componen
                                                                 <p class="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">{{ $slot->summary }}</p>
                                                             @endif
                                                         </button>
+                                                    @endforeach
+                                                </div>
+                                            </div>
+                                        @endif
+
+                                        @if ($this->dayJournalEntries($day)->isNotEmpty())
+                                            <div class="mt-5">
+                                                <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Updates from this day') }}</div>
+                                                <div class="mt-3 grid gap-2">
+                                                    @foreach ($this->dayJournalEntries($day) as $entry)
+                                                        <article class="rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-800">
+                                                            <div class="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                                                                @if ($entry->happened_at)
+                                                                    <span>{{ $entry->happened_at->format('M j, H:i') }}</span>
+                                                                @endif
+                                                                @if ($entry->dayItineraryItem)
+                                                                    <span>{{ $entry->dayItineraryItem->title }}</span>
+                                                                @endif
+                                                            </div>
+                                                            <div class="mt-1 font-medium text-zinc-950 dark:text-white">{{ $entry->title }}</div>
+                                                            @if ($entry->excerpt)
+                                                                <p class="mt-1 leading-6 text-zinc-600 dark:text-zinc-300">{{ $entry->excerpt }}</p>
+                                                            @endif
+                                                        </article>
                                                     @endforeach
                                                 </div>
                                             </div>

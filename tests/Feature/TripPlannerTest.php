@@ -6,6 +6,7 @@ use App\Models\DayItineraryItem;
 use App\Models\DayNode;
 use App\Models\DayTask;
 use App\Models\FoodSpot;
+use App\Models\JournalEntry;
 use App\Models\Source;
 use App\Models\TransportLeg;
 use App\Models\Trip;
@@ -280,6 +281,128 @@ test('trip management can set family and private visibility modes', function () 
     expect($variant->fresh())
         ->visibility->toBe('private')
         ->is_public->toBeFalse()
+        ->published_at->toBeNull();
+});
+
+test('public journal entries respect publication and visibility', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
+    $slot = $day->itineraryItems()->where('is_public', true)->firstOrFail();
+
+    $trip->publish();
+    $variant->publish();
+
+    JournalEntry::factory()->published()->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'day_node_id' => $day->id,
+        'day_itinerary_item_id' => $slot->id,
+        'title' => 'Public arrival update',
+        'excerpt' => 'Haneda arrival went smoothly.',
+        'body' => 'Traveler-safe public note.',
+        'happened_at' => '2027-06-30 12:00:00',
+        'location_label' => 'Tokyo Station',
+    ]);
+
+    JournalEntry::factory()->published('family')->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'day_node_id' => $day->id,
+        'title' => 'Family-only check-in',
+        'excerpt' => 'Shared with logged-in family.',
+    ]);
+
+    JournalEntry::factory()->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'day_node_id' => $day->id,
+        'title' => 'Draft travel note',
+        'visibility' => 'public',
+        'published_at' => null,
+    ]);
+
+    JournalEntry::factory()->published('private')->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'day_node_id' => $day->id,
+        'title' => 'Private admin note',
+    ]);
+
+    $this->get(route('trips.public', $trip))
+        ->assertOk()
+        ->assertSee('Public arrival update')
+        ->assertSee('Haneda arrival went smoothly.')
+        ->assertDontSee('Family-only check-in')
+        ->assertDontSee('Draft travel note')
+        ->assertDontSee('Private admin note');
+
+    $this->actingAs($user)
+        ->get(route('trips.public.days.show', [$trip, $variant, $day]))
+        ->assertOk()
+        ->assertSee('Public arrival update')
+        ->assertSee('Family-only check-in')
+        ->assertDontSee('Draft travel note')
+        ->assertDontSee('Private admin note');
+});
+
+test('trip management can create update publish and unpublish journal entries', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
+    $slot = $day->itineraryItems()->firstOrFail();
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage')
+        ->set('selectedTripId', $trip->id)
+        ->set('selectedVariantId', $variant->id)
+        ->set('journalForm.title', 'First trip journal note')
+        ->set('journalForm.excerpt', 'Short traveler update.')
+        ->set('journalForm.body', 'Longer journal body for the day.')
+        ->set('journalForm.location_label', 'Akihabara')
+        ->set('journalForm.trip_variant_id', (string) $variant->id)
+        ->set('journalForm.day_node_id', (string) $day->id)
+        ->set('journalForm.day_itinerary_item_id', (string) $slot->id)
+        ->set('journalForm.happened_at', '2027-06-30T18:30')
+        ->set('journalForm.visibility', 'family')
+        ->set('journalForm.tags', 'arrival, hotel')
+        ->set('journalForm.metadata_weather', 'humid')
+        ->set('journalForm.metadata_mood', 'excited')
+        ->call('createJournalEntry')
+        ->assertHasNoErrors()
+        ->assertSee('First trip journal note')
+        ->set('journalForm.title', 'Updated trip journal note')
+        ->call('updateJournalEntry')
+        ->call('publishJournalEntry')
+        ->assertHasNoErrors();
+
+    $entry = JournalEntry::query()->where('title', 'Updated trip journal note')->firstOrFail();
+
+    expect($entry)
+        ->trip_id->toBe($trip->id)
+        ->trip_variant_id->toBe($variant->id)
+        ->day_node_id->toBe($day->id)
+        ->day_itinerary_item_id->toBe($slot->id)
+        ->visibility->toBe('family')
+        ->published_at->not->toBeNull()
+        ->and($entry->tags)->toBe(['arrival', 'hotel'])
+        ->and($entry->metadata)->toMatchArray(['weather' => 'humid', 'mood' => 'excited']);
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage')
+        ->set('selectedTripId', $trip->id)
+        ->call('selectJournalEntry', $entry->id)
+        ->call('unpublishJournalEntry')
+        ->assertHasNoErrors();
+
+    expect($entry->fresh())
+        ->visibility->toBe('private')
         ->published_at->toBeNull();
 });
 

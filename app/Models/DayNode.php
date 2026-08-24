@@ -124,6 +124,13 @@ class DayNode extends Model
             ->orderBy('created_at');
     }
 
+    public function journalEntries(): HasMany
+    {
+        return $this->hasMany(JournalEntry::class)
+            ->orderByDesc('happened_at')
+            ->orderByDesc('created_at');
+    }
+
     public function valueCostRange(): string
     {
         return $this->formatCostRange($this->cost_value_min_nok, $this->cost_value_max_nok);
