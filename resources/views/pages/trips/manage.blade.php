@@ -35,6 +35,7 @@ new #[Title('Manage trips')] class extends Component {
     public array $taskForm = ['task_type' => 'todo', 'title' => '', 'priority' => 'medium', 'notes' => ''];
     public array $assetForm = ['name' => '', 'city' => '', 'country' => '', 'notes' => ''];
     public array $assetEditForm = [];
+    public array $assetAttachForm = ['time_label' => '', 'title' => '', 'summary' => '', 'is_public' => true];
 
     public function mount(): void
     {
@@ -236,6 +237,7 @@ new #[Title('Manage trips')] class extends Component {
         $this->assetEditForm = collect($this->assetEditableFields())
             ->mapWithKeys(fn (string $field): array => [$field => $asset->{$field} ?? ''])
             ->all();
+        $this->resetAssetAttachForm($asset);
     }
 
     public function updateAsset(): void
@@ -257,6 +259,74 @@ new #[Title('Manage trips')] class extends Component {
         $this->selectAsset($asset->id);
 
         Flux::toast(variant: 'success', text: __('Shared asset updated.'));
+    }
+
+    public function attachAssetToSelectedDay(): void
+    {
+        $asset = $this->selectedAsset;
+        $day = $this->selectedDay;
+
+        if (! $asset || ! $day) {
+            return;
+        }
+
+        $validated = $this->validate([
+            'assetAttachForm.time_label' => ['nullable', 'string', 'max:50'],
+            'assetAttachForm.title' => ['required', 'string', 'max:255'],
+            'assetAttachForm.summary' => ['nullable', 'string', 'max:1000'],
+            'assetAttachForm.is_public' => ['boolean'],
+        ]);
+
+        $day->itineraryItems()->create([
+            'trip_id' => $day->trip_id,
+            'trip_variant_id' => $day->trip_variant_id,
+            'stable_key' => 'asset-slot-'.Str::lower(Str::random(10)),
+            'item_type' => $this->assetItemType(),
+            'time_label' => $validated['assetAttachForm']['time_label'] ?: null,
+            'title' => $validated['assetAttachForm']['title'],
+            'location_label' => $this->assetLocationLabel($asset),
+            'subject_type' => $asset::class,
+            'subject_id' => $asset->id,
+            'latitude' => $asset instanceof TransportLeg ? null : $asset->latitude,
+            'longitude' => $asset instanceof TransportLeg ? null : $asset->longitude,
+            'summary' => $validated['assetAttachForm']['summary'] ?: null,
+            'is_public' => (bool) $validated['assetAttachForm']['is_public'],
+            'sort_order' => ($day->itineraryItems()->max('sort_order') ?? 0) + 10,
+            'details' => [],
+        ]);
+
+        unset($this->selectedDay, $this->selectedAssetUsages, $this->assets);
+        $this->resetAssetAttachForm($asset);
+
+        Flux::toast(variant: 'success', text: __('Asset attached to day.'));
+    }
+
+    public function detachAssetFromSelectedDay(int $slotId): void
+    {
+        $asset = $this->selectedAsset;
+
+        $slot = $asset && $this->selectedDay
+            ? $this->selectedDay->itineraryItems()
+                ->whereKey($slotId)
+                ->where('subject_type', $asset::class)
+                ->where('subject_id', $asset->id)
+                ->first()
+            : null;
+
+        if (! $slot) {
+            return;
+        }
+
+        $slot->delete();
+
+        unset($this->selectedDay, $this->selectedAssetUsages, $this->assets);
+
+        if ($this->selectedSlotId === $slotId) {
+            $this->selectedSlotId = null;
+            $this->slotEditForm = [];
+        }
+
+        Flux::toast(text: __('Asset detached from selected day.'));
     }
 
     public function createSlot(): void
@@ -716,6 +786,37 @@ new #[Title('Manage trips')] class extends Component {
         }
 
         return $rules;
+    }
+
+    private function resetAssetAttachForm(Model $asset): void
+    {
+        $this->assetAttachForm = [
+            'time_label' => '',
+            'title' => $this->assetLabel($asset),
+            'summary' => '',
+            'is_public' => true,
+        ];
+    }
+
+    private function assetItemType(): string
+    {
+        return match ($this->assetTab) {
+            'accommodations' => 'stay',
+            'transport' => 'move',
+            'food' => 'food',
+            default => 'activity',
+        };
+    }
+
+    private function assetLocationLabel(Model $asset): ?string
+    {
+        $location = match ($this->assetTab) {
+            'transport' => collect([$asset->origin, $asset->destination])->filter()->join(' to '),
+            'accommodations' => collect([$asset->neighborhood, $asset->city])->filter()->join(', '),
+            default => collect([$asset->area ?? null, $asset->city ?? null])->filter()->join(', '),
+        };
+
+        return $location !== '' ? $location : null;
     }
 
     private function parseSubjectRef(?string $subjectRef): array
@@ -1284,6 +1385,21 @@ new #[Title('Manage trips')] class extends Component {
                                     <flux:button type="submit" variant="primary" icon="check">{{ __('Save asset') }}</flux:button>
                                 </form>
 
+                                <form wire:submit="attachAssetToSelectedDay" class="mt-4 space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                                    <div>
+                                        <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Add to selected day') }}</div>
+                                        <div class="mt-1 text-sm text-zinc-500">
+                                            {{ $this->selectedDay ? __('Day :day · :title', ['day' => $this->selectedDay->day_number, 'title' => $this->selectedDay->title]) : __('Select a day first.') }}
+                                        </div>
+                                    </div>
+
+                                    <flux:input wire:model="assetAttachForm.time_label" :label="__('Time label')" placeholder="morning, lunch, arrival night" />
+                                    <flux:input wire:model="assetAttachForm.title" :label="__('Timeline title')" />
+                                    <flux:textarea wire:model="assetAttachForm.summary" :label="__('Traveler note')" rows="3" />
+                                    <flux:checkbox wire:model="assetAttachForm.is_public" :label="__('Show publicly')" />
+                                    <flux:button type="submit" icon="plus" :disabled="! $this->selectedDay">{{ __('Attach to day') }}</flux:button>
+                                </form>
+
                                 <div class="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
                                     <div class="flex items-center justify-between gap-3">
                                         <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Used in') }}</div>
@@ -1293,11 +1409,20 @@ new #[Title('Manage trips')] class extends Component {
                                     <div class="mt-3 space-y-2">
                                         @forelse ($this->selectedAssetUsages as $usage)
                                             <div class="rounded-md bg-zinc-50 p-3 text-sm dark:bg-zinc-800">
-                                                <div class="font-medium text-zinc-950 dark:text-white">
-                                                    {{ __('Day') }} {{ $usage->dayNode->day_number }} · {{ $usage->title }}
-                                                </div>
-                                                <div class="mt-1 text-zinc-500">
-                                                    {{ collect([$usage->dayNode->variant->trip->name, $usage->dayNode->variant->name, $usage->time_label])->filter()->join(' · ') }}
+                                                <div class="flex items-start justify-between gap-3">
+                                                    <div class="min-w-0">
+                                                        <div class="font-medium text-zinc-950 dark:text-white">
+                                                            {{ __('Day') }} {{ $usage->dayNode->day_number }} · {{ $usage->title }}
+                                                        </div>
+                                                        <div class="mt-1 text-zinc-500">
+                                                            {{ collect([$usage->dayNode->variant->trip->name, $usage->dayNode->variant->name, $usage->time_label])->filter()->join(' · ') }}
+                                                        </div>
+                                                    </div>
+                                                    @if ($usage->day_node_id === $this->selectedDayId)
+                                                        <flux:button size="xs" variant="danger" wire:click="detachAssetFromSelectedDay({{ $usage->id }})">
+                                                            {{ __('Detach') }}
+                                                        </flux:button>
+                                                    @endif
                                                 </div>
                                             </div>
                                         @empty

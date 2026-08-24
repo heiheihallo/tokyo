@@ -537,6 +537,48 @@ test('trip management can search and edit shared assets', function () {
         ->notes->toBe('Keep luggage complexity low.');
 });
 
+test('trip management can attach and detach shared assets from the selected day', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-6')->firstOrFail();
+    $foodSpot = FoodSpot::query()->where('stable_key', 'tokyo-ramen-street')->firstOrFail();
+
+    $component = Livewire::actingAs($user)
+        ->test('pages::trips.manage')
+        ->call('selectDay', $day->id)
+        ->set('assetTab', 'food')
+        ->call('selectAsset', $foodSpot->id)
+        ->set('assetAttachForm.time_label', 'lunch')
+        ->set('assetAttachForm.title', 'Tokyo Station ramen day anchor')
+        ->set('assetAttachForm.summary', 'Use this if Toyosu timing runs long.')
+        ->set('assetAttachForm.is_public', true)
+        ->call('attachAssetToSelectedDay')
+        ->assertHasNoErrors()
+        ->assertSee('Tokyo Station ramen day anchor');
+
+    $slot = DayItineraryItem::query()
+        ->where('day_node_id', $day->id)
+        ->where('subject_type', $foodSpot::class)
+        ->where('subject_id', $foodSpot->id)
+        ->where('title', 'Tokyo Station ramen day anchor')
+        ->firstOrFail();
+
+    expect($slot)
+        ->item_type->toBe('food')
+        ->time_label->toBe('lunch')
+        ->summary->toBe('Use this if Toyosu timing runs long.')
+        ->is_public->toBeTrue();
+
+    $component
+        ->call('detachAssetFromSelectedDay', $slot->id)
+        ->assertHasNoErrors();
+
+    expect(DayItineraryItem::query()->whereKey($slot->id)->exists())->toBeFalse();
+});
+
 test('public day show page hides admin only planning data', function () {
     Artisan::call('trip:import-japan-reference');
 
