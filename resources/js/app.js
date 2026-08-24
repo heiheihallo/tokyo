@@ -63,15 +63,21 @@ window.renderTripMap = (element, payload) => {
     });
 
     routes.forEach((route) => {
-        if (route.length < 2) {
+        const path = Array.isArray(route) ? route : (route.path ?? []);
+
+        if (path.length < 2) {
             return;
         }
 
-        L.polyline(route, {
+        const line = L.polyline(path, {
             color: '#0f766e',
             opacity: 0.72,
             weight: 3,
         }).addTo(map);
+
+        if (!Array.isArray(route) && route.label) {
+            line.bindTooltip(escapeHtml(route.label), { sticky: true });
+        }
     });
 
     if (bounds.length > 0) {

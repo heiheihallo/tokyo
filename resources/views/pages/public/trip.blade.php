@@ -7,6 +7,7 @@ use App\Models\TripVariant;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
@@ -129,7 +130,10 @@ new #[Layout('layouts.public')] #[Title('Trip timeline')] class extends Componen
 
         $routes = collect($points)
             ->groupBy('route_group')
-            ->map(fn (Collection $group) => $group->sortBy('sequence')->map(fn (array $point) => [$point['lat'], $point['lng']])->values()->all())
+            ->map(fn (Collection $group, string $routeGroup) => [
+                'label' => Str::of($routeGroup)->replace(['-', '_'], ' ')->title()->toString(),
+                'path' => $group->sortBy('sequence')->map(fn (array $point) => [$point['lat'], $point['lng']])->values()->all(),
+            ])
             ->values()
             ->all();
 

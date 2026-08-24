@@ -753,6 +753,30 @@ new #[Title('Manage trips')] class extends Component {
             ->all();
     }
 
+    public function publicTripUrl(): ?string
+    {
+        if (! $this->selectedTrip) {
+            return null;
+        }
+
+        return route('trips.public', $this->selectedTrip);
+    }
+
+    public function publicPreviewUrl(?TripVariant $variant = null): ?string
+    {
+        if (! $this->selectedTrip) {
+            return null;
+        }
+
+        return route('trips.public', array_filter([
+            'trip' => $this->selectedTrip,
+            'timeline' => $variant?->slug ?? $this->selectedVariant?->slug,
+            'day' => $this->selectedDay?->stable_key,
+            'slot' => $this->selectedSlot?->stable_key,
+            'preview' => 1,
+        ], fn ($value) => $value !== null));
+    }
+
     #[Computed]
     public function slotSubjects(): array
     {
@@ -1319,9 +1343,15 @@ new #[Title('Manage trips')] class extends Component {
                                     </flux:button>
                                 </div>
 
-                                @if ($this->selectedTrip->is_public)
-                                    <flux:link class="mt-3 block truncate" :href="route('trips.public', $this->selectedTrip)" target="_blank">
-                                        {{ route('trips.public', $this->selectedTrip) }}
+                                @if ($this->selectedTrip->is_public && $this->publicTripUrl())
+                                    <flux:link class="mt-3 block truncate" :href="$this->publicTripUrl()" target="_blank">
+                                        {{ $this->publicTripUrl() }}
+                                    </flux:link>
+                                @endif
+
+                                @if ($this->publicPreviewUrl())
+                                    <flux:link class="mt-2 block truncate text-amber-700 dark:text-amber-300" :href="$this->publicPreviewUrl()" target="_blank">
+                                        {{ __('Preview current timeline') }}
                                     </flux:link>
                                 @endif
                             </div>
@@ -1335,6 +1365,11 @@ new #[Title('Manage trips')] class extends Component {
                                         <div class="min-w-0">
                                             <div class="truncate font-medium">{{ $variant->name }}</div>
                                             <div class="text-zinc-500">{{ $variant->is_public ? __('Visible publicly') : __('Hidden publicly') }}</div>
+                                            @if ($this->publicPreviewUrl($variant))
+                                                <flux:link class="mt-1 block truncate text-xs text-amber-700 dark:text-amber-300" :href="$this->publicPreviewUrl($variant)" target="_blank">
+                                                    {{ __('Preview') }}
+                                                </flux:link>
+                                            @endif
                                         </div>
                                         <flux:button size="xs" wire:click="toggleVariantPublication({{ $variant->id }})">
                                             {{ $variant->is_public ? __('Hide') : __('Show') }}

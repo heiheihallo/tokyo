@@ -142,19 +142,38 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
                 ->all();
 
         $routes = collect($this->day->transportLegs)
-            ->pluck('geo_path')
+            ->filter(fn ($transportLeg) => filled($transportLeg->geo_path))
             ->filter()
-            ->map(fn (array $path) => collect($path)->map(fn (array $point) => [(float) $point[0], (float) $point[1]])->all())
+            ->map(fn ($transportLeg) => [
+                'label' => $transportLeg->route_label,
+                'path' => collect($transportLeg->geo_path)->map(fn (array $point) => [(float) $point[0], (float) $point[1]])->all(),
+            ])
             ->values()
             ->all();
 
         if ($routes === [] && count($points) > 1) {
             $routes = [
-                collect($points)->map(fn (array $point) => [$point['lat'], $point['lng']])->all(),
+                [
+                    'label' => __('Day flow'),
+                    'path' => collect($points)->map(fn (array $point) => [$point['lat'], $point['lng']])->all(),
+                ],
             ];
         }
 
         return ['points' => $points, 'routes' => $routes];
+    }
+
+    #[Computed]
+    public function publicSlotsMissingCoordinates(): Collection
+    {
+        return $this->day->publicItineraryItems
+            ->filter(function (DayItineraryItem $slot): bool {
+                $latitude = $slot->latitude ?? $slot->subject?->latitude;
+                $longitude = $slot->longitude ?? $slot->subject?->longitude;
+
+                return $latitude === null || $longitude === null;
+            })
+            ->values();
     }
 
     public function slotColor(string $type): string
@@ -425,6 +444,17 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
                 >
                     <div x-ref="map" class="h-80 overflow-hidden rounded-md border border-zinc-200 dark:border-zinc-700"></div>
                 </div>
+
+                @if ($this->publicSlotsMissingCoordinates->isNotEmpty())
+                    <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+                        <div class="font-semibold">{{ __('Needs map pin') }}</div>
+                        <div class="mt-2 flex flex-wrap gap-2">
+                            @foreach ($this->publicSlotsMissingCoordinates as $slot)
+                                <span class="rounded-full bg-white px-2.5 py-1 dark:bg-zinc-900">{{ $slot->title }}</span>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
             </section>
         </div>
 

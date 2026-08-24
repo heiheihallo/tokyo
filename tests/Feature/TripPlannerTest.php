@@ -865,3 +865,62 @@ test('public day page expands selected slot and links back to timeline state', f
         ->assertSee('day='.$day->stable_key, false)
         ->assertSee('slot='.$slot->stable_key, false);
 });
+
+test('trip management exposes authenticated public preview links', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $trip->unpublish();
+    $trip->variants()->get()->each->unpublish();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage')
+        ->set('selectedTripId', $trip->id)
+        ->set('selectedVariantId', $variant->id)
+        ->assertSee('Preview current timeline')
+        ->assertSee('Preview')
+        ->assertSee('preview=1', false)
+        ->assertSee('timeline='.$variant->slug, false);
+});
+
+test('public day map shows missing coordinate fallbacks for visible slots', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $trip->unpublish();
+    $trip->variants()->get()->each->unpublish();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
+    $trip->publish();
+    $variant->publish();
+
+    $day->itineraryItems()->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'stable_key' => 'public-missing-coordinate-slot',
+        'item_type' => 'activity',
+        'title' => 'Public missing coordinate stop',
+        'is_public' => true,
+        'sort_order' => 2200,
+        'details' => [],
+    ]);
+
+    $day->itineraryItems()->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'stable_key' => 'private-missing-coordinate-slot',
+        'item_type' => 'activity',
+        'title' => 'Private missing coordinate stop',
+        'is_public' => false,
+        'sort_order' => 2210,
+        'details' => [],
+    ]);
+
+    $this->get(route('trips.public.days.show', [$trip, $variant, $day]))
+        ->assertOk()
+        ->assertSee('Needs map pin')
+        ->assertSee('Public missing coordinate stop')
+        ->assertDontSee('Private missing coordinate stop');
+});
