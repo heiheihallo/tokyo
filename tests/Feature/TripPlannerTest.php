@@ -1,10 +1,12 @@
 <?php
 
 use App\Models\Accommodation;
+use App\Models\Activity;
 use App\Models\DayItineraryItem;
 use App\Models\DayNode;
 use App\Models\DayTask;
 use App\Models\FoodSpot;
+use App\Models\Source;
 use App\Models\TransportLeg;
 use App\Models\Trip;
 use App\Models\TripVariant;
@@ -313,6 +315,31 @@ test('day planning backfill fills only missing slot helpers and creates specific
 
     expect($day->tasks()->where('stable_key', 'confirm-movement-anchor')->exists())->toBeTrue();
     expect($day->tasks()->where('stable_key', 'check-activity-booking-needs')->exists())->toBeTrue();
+});
+
+test('reference sync backfills source urls and concrete flexible anchors', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $source = Source::query()->where('source_key', 'VISCHIO_KYOTO')->firstOrFail();
+    $source->update(['url' => null]);
+
+    $kidChoice = Activity::query()->where('stable_key', 'kyoto-kid-choice')->firstOrFail();
+    $kidChoice->update(['latitude' => null, 'longitude' => null, 'reservation_url' => null]);
+
+    Artisan::call('trip:import-japan-reference', ['--sync-reference' => true]);
+
+    expect($source->fresh()->url)->toBe('https://www.hotelvischio-kyoto.com/en/');
+
+    expect(Source::query()->where('source_key', 'NISHIKI')->value('url'))->toBe('https://kyoto.travel/en/destinations/kyoto-nishiki-food-market/');
+    expect(Source::query()->where('source_key', 'NARA_DEER')->value('url'))->toBe('https://narashikanko.or.jp/en/feature/deer');
+    expect(Source::query()->where('source_key', 'DOTONBORI')->value('url'))->toBe('https://osaka-info.jp/en/spot/tombori-river-cruise/');
+    expect(Source::query()->where('source_key', 'SMARTEX_HAYATOKU')->value('url'))->toBe('https://smart-ex.jp/en/product/');
+
+    expect($kidChoice->fresh())
+        ->area->toBe('Umekoji / Kyoto Railway Museum')
+        ->reservation_url->toBe('https://www.kyotorailwaymuseum.jp/en/')
+        ->latitude->toBe('34.9875000')
+        ->longitude->toBe('135.7433000');
 });
 
 test('public day show page renders public slots and hides private planning tasks', function () {
