@@ -818,6 +818,18 @@ new #[Title('Manage trips')] class extends Component {
         ];
     }
 
+    public function startJournalForSelectedDay(): void
+    {
+        $this->resetJournalForm();
+
+        $this->journalForm['title'] = $this->selectedDay ? __('Day :day update', ['day' => $this->selectedDay->day_number]) : '';
+        $this->journalForm['location_label'] = $this->selectedDay?->location ?? '';
+        $this->journalForm['trip_variant_id'] = $this->selectedVariantId ? (string) $this->selectedVariantId : '';
+        $this->journalForm['day_node_id'] = $this->selectedDayId ? (string) $this->selectedDayId : '';
+        $this->journalForm['day_itinerary_item_id'] = $this->selectedSlotId ? (string) $this->selectedSlotId : '';
+        unset($this->journalSlotOptions);
+    }
+
     public function toggleTaskStatus(int $taskId): void
     {
         $task = $this->selectedDay?->tasks()->whereKey($taskId)->first();
@@ -854,6 +866,10 @@ new #[Title('Manage trips')] class extends Component {
         if ($issue['target_type'] === 'asset') {
             $this->assetTab = $issue['asset_tab'];
             $this->selectAsset($issue['asset_id']);
+        }
+
+        if ($issue['target_type'] === 'journal') {
+            $this->selectJournalEntry($issue['journal_entry_id']);
         }
     }
 
@@ -986,6 +1002,34 @@ new #[Title('Manage trips')] class extends Component {
     }
 
     #[Computed]
+    public function selectedDayJournalEntries(): EloquentCollection
+    {
+        return $this->selectedDay
+            ? $this->selectedDay->journalEntries()
+                ->with(['dayItineraryItem', 'media'])
+                ->limit(10)
+                ->get()
+            : new EloquentCollection();
+    }
+
+    #[Computed]
+    public function selectedDayMapStatus(): array
+    {
+        $slots = $this->selectedDay?->itineraryItems ?? collect();
+        $publicSlots = $slots->where('is_public', true);
+
+        return [
+            'public_slots' => $publicSlots->count(),
+            'mapped_slots' => $publicSlots
+                ->filter(fn (DayItineraryItem $slot): bool => $slot->latitude !== null && $slot->longitude !== null)
+                ->count(),
+            'missing_slots' => $publicSlots
+                ->filter(fn (DayItineraryItem $slot): bool => $slot->latitude === null || $slot->longitude === null)
+                ->count(),
+        ];
+    }
+
+    #[Computed]
     public function selectedAsset(): ?Model
     {
         return $this->selectedAssetId ? $this->assetModel()::query()->find($this->selectedAssetId) : null;
@@ -1090,6 +1134,35 @@ new #[Title('Manage trips')] class extends Component {
             'timeline' => $variant?->slug ?? $this->selectedVariant?->slug,
             'day' => $this->selectedDay?->stable_key,
             'slot' => $this->selectedSlot?->stable_key,
+            'preview' => 1,
+        ], fn ($value) => $value !== null));
+    }
+
+    public function publicSelectedDayUrl(): ?string
+    {
+        if (! $this->selectedTrip || ! $this->selectedVariant || ! $this->selectedDay) {
+            return null;
+        }
+
+        return route('trips.public.days.show', array_filter([
+            'trip' => $this->selectedTrip,
+            'variant' => $this->selectedVariant,
+            'dayNode' => $this->selectedDay,
+            'slot' => $this->selectedSlot?->stable_key,
+            'preview' => 1,
+        ], fn ($value) => $value !== null));
+    }
+
+    public function publicJournalUrl(): ?string
+    {
+        if (! $this->selectedTrip) {
+            return null;
+        }
+
+        return route('trips.public.journal', array_filter([
+            'trip' => $this->selectedTrip,
+            'timeline' => $this->selectedVariant?->slug,
+            'day' => $this->selectedDay?->stable_key,
             'preview' => 1,
         ], fn ($value) => $value !== null));
     }
@@ -1259,6 +1332,7 @@ new #[Title('Manage trips')] class extends Component {
         return collect()
             ->merge($this->publicationPlanningIssues())
             ->merge($this->publicReadinessPlanningIssues())
+            ->merge($this->journalPlanningIssues())
             ->merge($this->dayPlanningIssues())
             ->merge($this->slotPlanningIssues())
             ->merge($this->assetPlanningIssues());
@@ -1420,6 +1494,83 @@ new #[Title('Manage trips')] class extends Component {
             ])
             ->values()
             ->all();
+    }
+
+    private function journalPlanningIssues(): array
+    {
+        if (! $this->selectedTrip) {
+            return [];
+        }
+
+        $issues = [];
+        $tripAccess = $this->selectedTrip->travelerAccessMode();
+
+        if (in_array($tripAccess, ['authenticated', 'public'], true) && $this->selectedTrip->journalEntries()->whereNotNull('published_at')->doesntExist()) {
+            $issues[] = [
+                'key' => 'journal-no-published-'.$this->selectedTrip->id,
+                'severity' => 'low',
+                'category_key' => 'journal',
+                'category' => __('Journal'),
+                'title' => __('Traveler frontend has no journal updates'),
+                'detail' => __('Add at least one published update before sharing widely.'),
+                'action' => __('Open journal'),
+                'target_type' => 'trip',
+            ];
+        }
+
+        $publishedEntries = $this->selectedTrip->journalEntries()
+            ->with('media')
+            ->whereNotNull('published_at')
+            ->limit(20)
+            ->get();
+
+        foreach ($publishedEntries as $entry) {
+            if (blank($entry->excerpt) && blank($entry->body) && $entry->publicMedia()->isEmpty()) {
+                $issues[] = [
+                    'key' => 'journal-empty-'.$entry->id,
+                    'severity' => 'medium',
+                    'category_key' => 'journal',
+                    'category' => __('Journal'),
+                    'title' => __('Published journal entry has no traveler detail'),
+                    'detail' => $entry->title,
+                    'action' => __('Edit entry'),
+                    'target_type' => 'journal',
+                    'journal_entry_id' => $entry->id,
+                ];
+            }
+
+            foreach ($entry->publicMedia() as $media) {
+                if (blank(data_get($media->custom_properties, 'alt'))) {
+                    $issues[] = [
+                        'key' => 'journal-media-alt-'.$media->id,
+                        'severity' => 'low',
+                        'category_key' => 'journal',
+                        'category' => __('Journal'),
+                        'title' => __('Public journal image is missing alt text'),
+                        'detail' => $entry->title,
+                        'action' => __('Edit entry'),
+                        'target_type' => 'journal',
+                        'journal_entry_id' => $entry->id,
+                    ];
+                }
+            }
+
+            if ($tripAccess === 'authenticated' && $entry->visibility === 'public' && $entry->publicMedia()->isNotEmpty()) {
+                $issues[] = [
+                    'key' => 'journal-public-media-login-trip-'.$entry->id,
+                    'severity' => 'low',
+                    'category_key' => 'journal',
+                    'category' => __('Journal'),
+                    'title' => __('Public journal media on planning-login trip'),
+                    'detail' => $entry->title,
+                    'action' => __('Edit entry'),
+                    'target_type' => 'journal',
+                    'journal_entry_id' => $entry->id,
+                ];
+            }
+        }
+
+        return collect($issues)->take(8)->values()->all();
     }
 
     private function dayPlanningIssues(): array
@@ -2246,6 +2397,92 @@ new #[Title('Manage trips')] class extends Component {
                 </flux:card>
 
                 @if ($this->selectedDay)
+                    <flux:card>
+                        <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div>
+                                <flux:heading>{{ __('Day workspace') }}</flux:heading>
+                                <flux:text>{{ __('One place to check public preview, map readiness, open tasks, and journal coverage for the selected day.') }}</flux:text>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                @if ($this->publicSelectedDayUrl())
+                                    <flux:button size="sm" icon="arrow-top-right-on-square" :href="$this->publicSelectedDayUrl()" target="_blank">
+                                        {{ __('Preview day') }}
+                                    </flux:button>
+                                @endif
+                                @if ($this->publicJournalUrl())
+                                    <flux:button size="sm" icon="newspaper" :href="$this->publicJournalUrl()" target="_blank">
+                                        {{ __('Journal feed') }}
+                                    </flux:button>
+                                @endif
+                                <flux:button size="sm" icon="pencil-square" wire:click="startJournalForSelectedDay">
+                                    {{ __('New day journal') }}
+                                </flux:button>
+                            </div>
+                        </div>
+
+                        <div class="mt-5 grid gap-3 md:grid-cols-4">
+                            <div class="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-700">
+                                <div class="text-zinc-500">{{ __('Public slots') }}</div>
+                                <div class="mt-1 text-lg font-semibold text-zinc-950 dark:text-white">{{ $this->selectedDayMapStatus['public_slots'] }}</div>
+                            </div>
+                            <div class="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-700">
+                                <div class="text-zinc-500">{{ __('Mapped slots') }}</div>
+                                <div class="mt-1 text-lg font-semibold text-zinc-950 dark:text-white">{{ $this->selectedDayMapStatus['mapped_slots'] }}</div>
+                            </div>
+                            <div class="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-700">
+                                <div class="text-zinc-500">{{ __('Map gaps') }}</div>
+                                <div class="mt-1 text-lg font-semibold {{ $this->selectedDayMapStatus['missing_slots'] > 0 ? 'text-amber-600' : 'text-zinc-950 dark:text-white' }}">{{ $this->selectedDayMapStatus['missing_slots'] }}</div>
+                            </div>
+                            <div class="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-700">
+                                <div class="text-zinc-500">{{ __('Open tasks') }}</div>
+                                <div class="mt-1 text-lg font-semibold text-zinc-950 dark:text-white">{{ $this->selectedDay->tasks->where('status', 'open')->count() }}</div>
+                            </div>
+                        </div>
+
+                        <div class="mt-5 grid gap-4 lg:grid-cols-2">
+                            <section>
+                                <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Journal coverage') }}</div>
+                                <div class="mt-3 space-y-2">
+                                    @forelse ($this->selectedDayJournalEntries as $entry)
+                                        <button type="button" wire:key="day-workspace-journal-{{ $entry->id }}" wire:click="selectJournalEntry({{ $entry->id }})" class="block w-full rounded-lg border border-zinc-200 px-3 py-2 text-left text-sm hover:border-teal-600 dark:border-zinc-700">
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <flux:badge color="{{ $entry->published_at ? 'teal' : 'zinc' }}">{{ $entry->published_at ? __('Published') : __('Draft') }}</flux:badge>
+                                                <flux:badge color="{{ $entry->visibility === 'public' ? 'green' : ($entry->visibility === 'family' ? 'amber' : 'zinc') }}">{{ $entry->visibilityLabel() }}</flux:badge>
+                                            </div>
+                                            <div class="mt-2 font-medium text-zinc-950 dark:text-white">{{ $entry->title }}</div>
+                                            @if ($entry->dayItineraryItem)
+                                                <div class="mt-1 text-zinc-500">{{ $entry->dayItineraryItem->title }}</div>
+                                            @endif
+                                        </button>
+                                    @empty
+                                        <div class="rounded-lg border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">
+                                            {{ __('No journal updates attached to this day yet.') }}
+                                        </div>
+                                    @endforelse
+                                </div>
+                            </section>
+
+                            <section>
+                                <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Open fixes') }}</div>
+                                <div class="mt-3 space-y-2">
+                                    @forelse ($this->selectedDay->tasks->where('status', 'open')->take(5) as $task)
+                                        <div class="rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-700">
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <flux:badge>{{ $task->task_type }}</flux:badge>
+                                                <flux:badge color="{{ $task->priority === 'high' ? 'red' : ($task->priority === 'medium' ? 'amber' : 'zinc') }}">{{ $task->priority }}</flux:badge>
+                                            </div>
+                                            <div class="mt-2 font-medium text-zinc-950 dark:text-white">{{ $task->title }}</div>
+                                        </div>
+                                    @empty
+                                        <div class="rounded-lg border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">
+                                            {{ __('No open fixes for this day.') }}
+                                        </div>
+                                    @endforelse
+                                </div>
+                            </section>
+                        </div>
+                    </flux:card>
+
                     <flux:card>
                         <div class="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
                             <div>

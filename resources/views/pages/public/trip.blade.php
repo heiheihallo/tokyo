@@ -198,6 +198,26 @@ new #[Layout('layouts.public')] #[Title('Trip timeline')] class extends Componen
         ], fn ($value) => $value !== null));
     }
 
+    public function journalUrl(): string
+    {
+        return route('trips.public.journal', array_filter([
+            'trip' => $this->trip,
+            'timeline' => $this->variantSlug,
+            'day' => $this->selectedDayKey ?: null,
+            'preview' => $this->canPreview() ? 1 : null,
+        ], fn ($value) => $value !== null));
+    }
+
+    public function journalEntryUrl(JournalEntry $entry): string
+    {
+        return route('trips.public.journal.show', array_filter([
+            'trip' => $this->trip,
+            'journalEntry' => $entry,
+            'timeline' => $this->variantSlug,
+            'preview' => $this->canPreview() ? 1 : null,
+        ], fn ($value) => $value !== null));
+    }
+
     private function availableVariantsQuery(Trip $trip): HasMany
     {
         return $this->canPreview()
@@ -242,6 +262,9 @@ new #[Layout('layouts.public')] #[Title('Trip timeline')] class extends Componen
 
                     <flux:button class="mt-4 w-full" size="sm" icon="link" :href="$this->publicTripUrl()">
                         {{ __('Share current view') }}
+                    </flux:button>
+                    <flux:button class="mt-2 w-full" size="sm" icon="newspaper" :href="$this->journalUrl()">
+                        {{ __('Open journal') }}
                     </flux:button>
                 </div>
             </div>
@@ -294,7 +317,9 @@ new #[Layout('layouts.public')] #[Title('Trip timeline')] class extends Componen
                                             <span>{{ __('Day :day', ['day' => $entry->dayNode->day_number]) }}</span>
                                         @endif
                                     </div>
-                                    <h3 class="mt-2 font-semibold text-zinc-950 dark:text-white">{{ $entry->title }}</h3>
+                                    <h3 class="mt-2 font-semibold text-zinc-950 dark:text-white">
+                                        <a href="{{ $this->journalEntryUrl($entry) }}">{{ $entry->title }}</a>
+                                    </h3>
                                     @if ($entry->excerpt)
                                         <p class="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">{{ $entry->excerpt }}</p>
                                     @elseif ($entry->body)
@@ -431,7 +456,9 @@ new #[Layout('layouts.public')] #[Title('Trip timeline')] class extends Componen
                                                                     <span>{{ $entry->dayItineraryItem->title }}</span>
                                                                 @endif
                                                             </div>
-                                                            <div class="mt-1 font-medium text-zinc-950 dark:text-white">{{ $entry->title }}</div>
+                                                            <div class="mt-1 font-medium text-zinc-950 dark:text-white">
+                                                                <a href="{{ $this->journalEntryUrl($entry) }}">{{ $entry->title }}</a>
+                                                            </div>
                                                             @if ($entry->excerpt)
                                                                 <p class="mt-1 leading-6 text-zinc-600 dark:text-zinc-300">{{ $entry->excerpt }}</p>
                                                             @endif

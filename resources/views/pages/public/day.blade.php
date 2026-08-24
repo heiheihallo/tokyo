@@ -245,6 +245,26 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
         ], fn ($value) => $value !== null));
     }
 
+    public function journalUrl(): string
+    {
+        return route('trips.public.journal', array_filter([
+            'trip' => $this->trip,
+            'timeline' => $this->variant->slug,
+            'day' => $this->day->stable_key,
+            'preview' => $this->canPreview() ? 1 : null,
+        ], fn ($value) => $value !== null));
+    }
+
+    public function journalEntryUrl(JournalEntry $entry): string
+    {
+        return route('trips.public.journal.show', array_filter([
+            'trip' => $this->trip,
+            'journalEntry' => $entry,
+            'timeline' => $this->variant->slug,
+            'preview' => $this->canPreview() ? 1 : null,
+        ], fn ($value) => $value !== null));
+    }
+
     public function nodeTypesLabel(): string
     {
         return collect($this->day->node_types)->map(fn (string $type) => ucfirst($type))->join(' · ');
@@ -261,6 +281,10 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
 
                 <flux:button size="sm" icon="link" :href="$this->dayUrl()">
                     {{ __('Share day') }}
+                </flux:button>
+
+                <flux:button size="sm" icon="newspaper" :href="$this->journalUrl()">
+                    {{ __('Journal') }}
                 </flux:button>
 
                 @if ($this->canPreview())
@@ -362,7 +386,9 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
                                                                     >
                                                                 @endif
                                                                 <div class="text-xs text-zinc-500">{{ $entry->happened_at?->format('M j, H:i') }}</div>
-                                                                <div class="mt-1 font-medium text-zinc-950 dark:text-white">{{ $entry->title }}</div>
+                                                                <div class="mt-1 font-medium text-zinc-950 dark:text-white">
+                                                                    <a href="{{ $this->journalEntryUrl($entry) }}">{{ $entry->title }}</a>
+                                                                </div>
                                                                 @if ($entry->excerpt)
                                                                     <p class="mt-1">{{ $entry->excerpt }}</p>
                                                                 @endif
@@ -406,7 +432,9 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
                                         <span>{{ $entry->dayItineraryItem->title }}</span>
                                     @endif
                                 </div>
-                                <h3 class="mt-2 font-semibold text-zinc-950 dark:text-white">{{ $entry->title }}</h3>
+                                <h3 class="mt-2 font-semibold text-zinc-950 dark:text-white">
+                                    <a href="{{ $this->journalEntryUrl($entry) }}">{{ $entry->title }}</a>
+                                </h3>
                                 @if ($entry->excerpt)
                                     <p class="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">{{ $entry->excerpt }}</p>
                                 @endif

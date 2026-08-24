@@ -516,6 +516,130 @@ test('public journal media renders only when the entry and image are public', fu
         ->assertDontSee('Private alt');
 });
 
+test('public journal feed respects planning login access and filters updates', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $hiddenVariant = $trip->variants()->where('slug', 'premium-seoul-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
+
+    $trip->setFrontendAccess('authenticated');
+    $variant->setFrontendAccess('authenticated');
+    $hiddenVariant->setFrontendAccess('private');
+
+    JournalEntry::factory()->published('family')->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'day_node_id' => $day->id,
+        'title' => 'Family arrival story',
+        'excerpt' => 'A planning-login update for family.',
+        'tags' => ['arrival', 'hotel'],
+    ]);
+
+    JournalEntry::factory()->published('family')->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $hiddenVariant->id,
+        'title' => 'Hidden timeline journal',
+        'excerpt' => 'This belongs to a private timeline.',
+        'tags' => ['hidden'],
+    ]);
+
+    $this->get(route('trips.public.journal', $trip))->assertNotFound();
+
+    $this->actingAs($user)
+        ->get(route('trips.public.journal', [
+            'trip' => $trip,
+            'timeline' => $variant->slug,
+            'day' => $day->stable_key,
+            'tag' => 'arrival',
+        ]))
+        ->assertOk()
+        ->assertSee('Trip journal')
+        ->assertSee('Family arrival story')
+        ->assertSee('A planning-login update for family.')
+        ->assertDontSee('Hidden timeline journal');
+});
+
+test('public journal show page renders one traveler safe story', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
+    $trip->publish();
+    $variant->publish();
+
+    $entry = JournalEntry::factory()->published()->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'day_node_id' => $day->id,
+        'title' => 'One shared story',
+        'excerpt' => 'Traveler-safe summary.',
+        'body' => 'Longer story without admin planning details.',
+        'tags' => ['arrival'],
+    ]);
+
+    $publicPath = tempnam(sys_get_temp_dir(), 'journal-show-public');
+    $privatePath = tempnam(sys_get_temp_dir(), 'journal-show-private');
+    writeTripPlannerJournalTinyPng($publicPath);
+    writeTripPlannerJournalTinyPng($privatePath);
+
+    $entry->addMedia($publicPath)
+        ->withCustomProperties(['visibility' => 'public', 'caption' => 'Story caption', 'alt' => 'Story image alt'])
+        ->toMediaCollection(JournalEntry::MEDIA_COLLECTION_IMAGES);
+
+    $entry->addMedia($privatePath)
+        ->withCustomProperties(['visibility' => 'private', 'caption' => 'Hidden story caption', 'alt' => 'Hidden story alt'])
+        ->toMediaCollection(JournalEntry::MEDIA_COLLECTION_IMAGES);
+
+    $this->get(route('trips.public.journal.show', [$trip, $entry]))
+        ->assertOk()
+        ->assertSee('One shared story')
+        ->assertSee('Longer story without admin planning details.')
+        ->assertSee('Story caption')
+        ->assertSee('Story image alt')
+        ->assertDontSee('Hidden story caption')
+        ->assertDontSee('Hidden story alt');
+});
+
+test('trip management connects selected day workspace and journal quality checks', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
+    $trip->publish();
+    $variant->publish();
+
+    $entry = JournalEntry::factory()->published()->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'day_node_id' => $day->id,
+        'title' => 'Published but empty journal entry',
+        'excerpt' => null,
+        'body' => null,
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage')
+        ->set('selectedTripId', $trip->id)
+        ->set('selectedVariantId', $variant->id)
+        ->call('selectDay', $day->id)
+        ->assertSee('Day workspace')
+        ->assertSee('Preview day')
+        ->assertSee('Journal coverage')
+        ->call('startJournalForSelectedDay')
+        ->assertSet('journalForm.title', 'Day 4 update')
+        ->assertSet('journalForm.day_node_id', (string) $day->id)
+        ->set('planningCategoryFilter', 'journal')
+        ->assertSee('Published journal entry has no traveler detail')
+        ->call('openPlanningIssue', 'journal-empty-'.$entry->id)
+        ->assertSet('selectedJournalEntryId', $entry->id);
+});
+
 test('public day show page requires a published trip and timeline', function () {
     Artisan::call('trip:import-japan-reference');
 
