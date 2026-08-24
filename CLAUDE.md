@@ -180,3 +180,10 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 - Do NOT delete tests without approval.
 
 </laravel-boost-guidelines>
+
+
+---
+
+## COG
+Run /report-to-cog when a session produces something worth remembering — not for experiments, WIP, or refactors that are not done yet.
+cog-project: trip-planner
