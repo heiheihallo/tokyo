@@ -549,7 +549,32 @@ new #[Title('Manage trips')] class extends Component {
             });
         }
 
-        return $query->orderBy($this->assetLabelColumn())->limit(40)->get();
+        $assets = $query->orderBy($this->assetLabelColumn())->limit(40)->get();
+        $usageCounts = DayItineraryItem::query()
+            ->where('subject_type', $this->assetModel())
+            ->whereIn('subject_id', $assets->modelKeys())
+            ->selectRaw('subject_id, count(*) as aggregate')
+            ->groupBy('subject_id')
+            ->pluck('aggregate', 'subject_id');
+
+        return $assets->each(fn (Model $asset) => $asset->setAttribute('usage_count', (int) ($usageCounts[$asset->id] ?? 0)));
+    }
+
+    #[Computed]
+    public function selectedAssetUsages(): EloquentCollection
+    {
+        return $this->selectedAsset
+            ? DayItineraryItem::query()
+                ->with(['dayNode.variant.trip'])
+                ->join('day_nodes', 'day_nodes.id', '=', 'day_itinerary_items.day_node_id')
+                ->where('day_itinerary_items.subject_type', $this->assetModel())
+                ->where('day_itinerary_items.subject_id', $this->selectedAsset->id)
+                ->orderBy('day_nodes.day_number')
+                ->orderBy('day_itinerary_items.sort_order')
+                ->select('day_itinerary_items.*')
+                ->limit(20)
+                ->get()
+            : new EloquentCollection();
     }
 
     #[Computed]
@@ -1178,6 +1203,9 @@ new #[Title('Manage trips')] class extends Component {
                                             <flux:table.cell>{{ $this->assetLocation($asset) }}</flux:table.cell>
                                             <flux:table.cell>
                                                 <div class="flex flex-wrap gap-1">
+                                                    <flux:badge size="sm" color="{{ $asset->usage_count > 0 ? 'blue' : 'zinc' }}">
+                                                        {{ trans_choice(':count use|:count uses', $asset->usage_count, ['count' => $asset->usage_count]) }}
+                                                    </flux:badge>
                                                     @forelse ($this->assetQualityFlags($asset) as $flag)
                                                         <flux:badge size="sm" color="amber">{{ $flag }}</flux:badge>
                                                     @empty
@@ -1255,6 +1283,28 @@ new #[Title('Manage trips')] class extends Component {
                                     <flux:textarea wire:model="assetEditForm.notes" :label="__('Notes')" rows="4" />
                                     <flux:button type="submit" variant="primary" icon="check">{{ __('Save asset') }}</flux:button>
                                 </form>
+
+                                <div class="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Used in') }}</div>
+                                        <flux:badge size="sm">{{ $this->selectedAssetUsages->count() }}</flux:badge>
+                                    </div>
+
+                                    <div class="mt-3 space-y-2">
+                                        @forelse ($this->selectedAssetUsages as $usage)
+                                            <div class="rounded-md bg-zinc-50 p-3 text-sm dark:bg-zinc-800">
+                                                <div class="font-medium text-zinc-950 dark:text-white">
+                                                    {{ __('Day') }} {{ $usage->dayNode->day_number }} · {{ $usage->title }}
+                                                </div>
+                                                <div class="mt-1 text-zinc-500">
+                                                    {{ collect([$usage->dayNode->variant->trip->name, $usage->dayNode->variant->name, $usage->time_label])->filter()->join(' · ') }}
+                                                </div>
+                                            </div>
+                                        @empty
+                                            <div class="text-sm text-zinc-500">{{ __('Not attached to any day slots yet.') }}</div>
+                                        @endforelse
+                                    </div>
+                                </div>
                             @else
                                 <div class="rounded-lg border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">
                                     {{ __('Select a shared asset to fill coordinates, traveler notes, URLs, and type-specific planning details.') }}

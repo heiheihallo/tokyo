@@ -470,6 +470,9 @@ test('trip management can search and edit shared assets', function () {
     Artisan::call('trip:import-japan-reference');
 
     $user = User::factory()->create();
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
     $hotel = Accommodation::query()->where('stable_key', 'mets-akihabara')->firstOrFail();
     $transport = TransportLeg::query()->create([
         'stable_key' => 'test-asset-edit-transport',
@@ -480,11 +483,27 @@ test('trip management can search and edit shared assets', function () {
         'notes' => null,
     ]);
 
+    $day->itineraryItems()->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'stable_key' => 'admin-asset-usage-anchor',
+        'item_type' => 'stay',
+        'time_label' => 'arrival night',
+        'title' => 'Admin asset usage anchor',
+        'subject_type' => $hotel::class,
+        'subject_id' => $hotel->id,
+        'is_public' => true,
+        'sort_order' => 1500,
+        'details' => [],
+    ]);
+
     Livewire::actingAs($user)
         ->test('pages::trips.manage')
         ->set('assetSearch', 'Mets')
         ->assertSee('JR East Hotel Mets Premier Akihabara')
         ->call('selectAsset', $hotel->id)
+        ->assertSee('Admin asset usage anchor')
+        ->assertSee('arrival night')
         ->set('assetEditForm.neighborhood', 'Akihabara Station east')
         ->set('assetEditForm.reservation_url', 'https://hotel.example.test/reservation')
         ->set('assetEditForm.latitude', '35.6984000')
