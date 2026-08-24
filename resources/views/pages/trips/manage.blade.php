@@ -12,6 +12,7 @@ use App\Models\Trip;
 use App\Models\TripVariant;
 use Flux\Flux;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
@@ -22,7 +23,9 @@ new #[Title('Manage trips')] class extends Component {
     public ?int $selectedVariantId = null;
     public ?int $selectedDayId = null;
     public ?int $selectedSlotId = null;
+    public ?int $selectedAssetId = null;
     public string $assetTab = 'accommodations';
+    public string $assetSearch = '';
 
     public array $tripForm = ['name' => '', 'summary' => '', 'starts_on' => '', 'ends_on' => '', 'arrival_preference' => 'HND'];
     public array $variantForm = ['name' => '', 'budget_scenario' => 'value', 'stopover_type' => '', 'flight_strategy' => ''];
@@ -31,6 +34,7 @@ new #[Title('Manage trips')] class extends Component {
     public array $slotEditForm = [];
     public array $taskForm = ['task_type' => 'todo', 'title' => '', 'priority' => 'medium', 'notes' => ''];
     public array $assetForm = ['name' => '', 'city' => '', 'country' => '', 'notes' => ''];
+    public array $assetEditForm = [];
 
     public function mount(): void
     {
@@ -218,6 +222,41 @@ new #[Title('Manage trips')] class extends Component {
         $this->assetForm = ['name' => '', 'city' => '', 'country' => '', 'notes' => ''];
 
         Flux::toast(variant: 'success', text: __('Shared asset created.'));
+    }
+
+    public function selectAsset(int $assetId): void
+    {
+        $asset = $this->assetModel()::query()->find($assetId);
+
+        if (! $asset) {
+            return;
+        }
+
+        $this->selectedAssetId = $asset->id;
+        $this->assetEditForm = collect($this->assetEditableFields())
+            ->mapWithKeys(fn (string $field): array => [$field => $asset->{$field} ?? ''])
+            ->all();
+    }
+
+    public function updateAsset(): void
+    {
+        $asset = $this->selectedAsset;
+
+        if (! $asset) {
+            return;
+        }
+
+        $validated = $this->validate($this->assetValidationRules());
+        $payload = collect($this->assetEditableFields())
+            ->mapWithKeys(fn (string $field): array => [$field => $this->blankToNull($validated['assetEditForm'][$field] ?? null)])
+            ->all();
+
+        $asset->fill($payload)->save();
+
+        unset($this->selectedAsset, $this->assets, $this->slotSubjects);
+        $this->selectAsset($asset->id);
+
+        Flux::toast(variant: 'success', text: __('Shared asset updated.'));
     }
 
     public function createSlot(): void
@@ -491,9 +530,26 @@ new #[Title('Manage trips')] class extends Component {
     }
 
     #[Computed]
+    public function selectedAsset(): ?Model
+    {
+        return $this->selectedAssetId ? $this->assetModel()::query()->find($this->selectedAssetId) : null;
+    }
+
+    #[Computed]
     public function assets(): EloquentCollection
     {
-        return $this->assetModel()::query()->orderBy('name')->limit(20)->get();
+        $query = $this->assetModel()::query();
+        $search = trim($this->assetSearch);
+
+        if ($search !== '') {
+            $query->where(function ($query) use ($search): void {
+                foreach ($this->assetSearchColumns() as $column) {
+                    $query->orWhere($column, 'ilike', '%'.$search.'%');
+                }
+            });
+        }
+
+        return $query->orderBy($this->assetLabelColumn())->limit(40)->get();
     }
 
     #[Computed]
@@ -536,6 +592,35 @@ new #[Title('Manage trips')] class extends Component {
         $this->loadDayForm();
     }
 
+    public function updatedAssetTab(): void
+    {
+        $this->selectedAssetId = null;
+        $this->assetEditForm = [];
+    }
+
+    public function assetLabel(Model $asset): string
+    {
+        return $asset->route_label ?? $asset->name;
+    }
+
+    public function assetLocation(Model $asset): string
+    {
+        return collect([
+            $asset->city ?? $asset->origin ?? null,
+            $asset->area ?? $asset->neighborhood ?? $asset->destination ?? null,
+        ])->filter()->join(' / ') ?: '—';
+    }
+
+    public function assetQualityFlags(Model $asset): array
+    {
+        return collect([
+            ($asset instanceof TransportLeg && blank($asset->geo_path ?? null)) ? __('No route') : null,
+            (! ($asset instanceof TransportLeg) && ($asset->latitude === null || $asset->longitude === null)) ? __('No map') : null,
+            blank($asset->reservation_url ?? null) ? __('No URL') : null,
+            blank($asset->notes ?? null) ? __('No notes') : null,
+        ])->filter()->values()->all();
+    }
+
     private function loadDayForm(): void
     {
         $day = $this->selectedDay;
@@ -564,6 +649,48 @@ new #[Title('Manage trips')] class extends Component {
             'transport' => TransportLeg::class,
             default => Accommodation::class,
         };
+    }
+
+    private function assetLabelColumn(): string
+    {
+        return $this->assetTab === 'transport' ? 'route_label' : 'name';
+    }
+
+    private function assetSearchColumns(): array
+    {
+        return match ($this->assetTab) {
+            'activities', 'food' => ['name', 'area', 'city', 'country', 'notes'],
+            'transport' => ['route_label', 'mode', 'operator', 'origin', 'destination', 'notes'],
+            default => ['name', 'neighborhood', 'city', 'country', 'notes'],
+        };
+    }
+
+    private function assetEditableFields(): array
+    {
+        return match ($this->assetTab) {
+            'activities' => ['name', 'area', 'city', 'country', 'rain_fit', 'age_fit', 'prebooking_status', 'reservation_url', 'latitude', 'longitude', 'notes'],
+            'food' => ['name', 'area', 'city', 'country', 'default_meal_type', 'fallback_type', 'latitude', 'longitude', 'notes'],
+            'transport' => ['route_label', 'mode', 'operator', 'origin', 'destination', 'duration_label', 'reservation_url', 'notes'],
+            default => ['name', 'neighborhood', 'city', 'country', 'breakfast_note', 'dinner_note', 'reservation_url', 'latitude', 'longitude', 'notes'],
+        };
+    }
+
+    private function assetValidationRules(): array
+    {
+        $rules = [];
+
+        foreach ($this->assetEditableFields() as $field) {
+            $rules['assetEditForm.'.$field] = match ($field) {
+                'name', 'route_label' => ['required', 'string', 'max:255'],
+                'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+                'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+                'reservation_url' => ['nullable', 'url', 'max:2048'],
+                'notes', 'breakfast_note', 'dinner_note' => ['nullable', 'string', 'max:4000'],
+                default => ['nullable', 'string', 'max:255'],
+            };
+        }
+
+        return $rules;
     }
 
     private function parseSubjectRef(?string $subjectRef): array
@@ -1028,22 +1155,113 @@ new #[Title('Manage trips')] class extends Component {
                         </div>
                     </form>
 
-                    <flux:table class="mt-4">
-                        <flux:table.columns>
-                            <flux:table.column>{{ __('Name') }}</flux:table.column>
-                            <flux:table.column>{{ __('City') }}</flux:table.column>
-                            <flux:table.column>{{ __('Notes') }}</flux:table.column>
-                        </flux:table.columns>
-                        <flux:table.rows>
-                            @foreach ($this->assets as $asset)
-                                <flux:table.row>
-                                    <flux:table.cell>{{ $asset->name ?? $asset->route_label }}</flux:table.cell>
-                                    <flux:table.cell>{{ $asset->city ?? $asset->origin ?? '—' }}</flux:table.cell>
-                                    <flux:table.cell class="max-w-lg truncate">{{ $asset->notes }}</flux:table.cell>
-                                </flux:table.row>
-                            @endforeach
-                        </flux:table.rows>
-                    </flux:table>
+                    <div class="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+                        <div>
+                            <flux:input wire:model.live.debounce.300ms="assetSearch" icon="magnifying-glass" :label="__('Search shared assets')" placeholder="{{ __('Name, area, city, route, notes') }}" />
+
+                            <flux:table class="mt-4">
+                                <flux:table.columns>
+                                    <flux:table.column>{{ __('Asset') }}</flux:table.column>
+                                    <flux:table.column>{{ __('Place') }}</flux:table.column>
+                                    <flux:table.column>{{ __('Status') }}</flux:table.column>
+                                    <flux:table.column>{{ __('') }}</flux:table.column>
+                                </flux:table.columns>
+                                <flux:table.rows>
+                                    @forelse ($this->assets as $asset)
+                                        <flux:table.row wire:key="asset-row-{{ $this->assetTab }}-{{ $asset->id }}">
+                                            <flux:table.cell>
+                                                <div class="font-medium text-zinc-950 dark:text-white">{{ $this->assetLabel($asset) }}</div>
+                                                @if ($asset->notes)
+                                                    <div class="mt-1 max-w-sm truncate text-sm text-zinc-500">{{ $asset->notes }}</div>
+                                                @endif
+                                            </flux:table.cell>
+                                            <flux:table.cell>{{ $this->assetLocation($asset) }}</flux:table.cell>
+                                            <flux:table.cell>
+                                                <div class="flex flex-wrap gap-1">
+                                                    @forelse ($this->assetQualityFlags($asset) as $flag)
+                                                        <flux:badge size="sm" color="amber">{{ $flag }}</flux:badge>
+                                                    @empty
+                                                        <flux:badge size="sm" color="green">{{ __('Ready') }}</flux:badge>
+                                                    @endforelse
+                                                </div>
+                                            </flux:table.cell>
+                                            <flux:table.cell>
+                                                <flux:button size="xs" icon="pencil-square" wire:click="selectAsset({{ $asset->id }})">
+                                                    {{ __('Edit') }}
+                                                </flux:button>
+                                            </flux:table.cell>
+                                        </flux:table.row>
+                                    @empty
+                                        <flux:table.row>
+                                            <flux:table.cell colspan="4">{{ __('No matching shared assets.') }}</flux:table.cell>
+                                        </flux:table.row>
+                                    @endforelse
+                                </flux:table.rows>
+                            </flux:table>
+                        </div>
+
+                        <div>
+                            @if ($this->selectedAsset)
+                                <form wire:submit="updateAsset" class="space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                                    <div>
+                                        <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Edit shared asset') }}</div>
+                                        <div class="mt-1 text-sm text-zinc-500">{{ $this->assetLabel($this->selectedAsset) }}</div>
+                                    </div>
+
+                                    @if ($this->assetTab === 'transport')
+                                        <flux:input wire:model="assetEditForm.route_label" :label="__('Route label')" />
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <flux:input wire:model="assetEditForm.mode" :label="__('Mode')" />
+                                            <flux:input wire:model="assetEditForm.operator" :label="__('Operator')" />
+                                        </div>
+                                        <flux:input wire:model="assetEditForm.origin" :label="__('Origin')" />
+                                        <flux:input wire:model="assetEditForm.destination" :label="__('Destination')" />
+                                        <flux:input wire:model="assetEditForm.duration_label" :label="__('Duration')" />
+                                        <flux:input wire:model="assetEditForm.reservation_url" :label="__('Reservation URL')" type="url" />
+                                    @else
+                                        <flux:input wire:model="assetEditForm.name" :label="__('Name')" />
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <flux:input wire:model="assetEditForm.city" :label="__('City')" />
+                                            <flux:input wire:model="assetEditForm.country" :label="__('Country')" />
+                                        </div>
+
+                                        @if ($this->assetTab === 'accommodations')
+                                            <flux:input wire:model="assetEditForm.neighborhood" :label="__('Neighborhood')" />
+                                            <flux:input wire:model="assetEditForm.breakfast_note" :label="__('Breakfast note')" />
+                                            <flux:input wire:model="assetEditForm.dinner_note" :label="__('Dinner note')" />
+                                            <flux:input wire:model="assetEditForm.reservation_url" :label="__('Reservation URL')" type="url" />
+                                        @elseif ($this->assetTab === 'activities')
+                                            <flux:input wire:model="assetEditForm.area" :label="__('Area')" />
+                                            <div class="grid grid-cols-2 gap-3">
+                                                <flux:input wire:model="assetEditForm.rain_fit" :label="__('Rain fit')" />
+                                                <flux:input wire:model="assetEditForm.age_fit" :label="__('Kid fit')" />
+                                            </div>
+                                            <flux:input wire:model="assetEditForm.prebooking_status" :label="__('Prebooking')" />
+                                            <flux:input wire:model="assetEditForm.reservation_url" :label="__('Reservation URL')" type="url" />
+                                        @elseif ($this->assetTab === 'food')
+                                            <flux:input wire:model="assetEditForm.area" :label="__('Area')" />
+                                            <div class="grid grid-cols-2 gap-3">
+                                                <flux:input wire:model="assetEditForm.default_meal_type" :label="__('Meal type')" />
+                                                <flux:input wire:model="assetEditForm.fallback_type" :label="__('Fallback')" />
+                                            </div>
+                                        @endif
+
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <flux:input wire:model="assetEditForm.latitude" :label="__('Latitude')" type="number" step="0.0000001" />
+                                            <flux:input wire:model="assetEditForm.longitude" :label="__('Longitude')" type="number" step="0.0000001" />
+                                        </div>
+                                    @endif
+
+                                    <flux:textarea wire:model="assetEditForm.notes" :label="__('Notes')" rows="4" />
+                                    <flux:button type="submit" variant="primary" icon="check">{{ __('Save asset') }}</flux:button>
+                                </form>
+                            @else
+                                <div class="rounded-lg border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">
+                                    {{ __('Select a shared asset to fill coordinates, traveler notes, URLs, and type-specific planning details.') }}
+                                </div>
+                            @endif
+                        </div>
+                    </div>
                 </flux:card>
             </div>
         </div>

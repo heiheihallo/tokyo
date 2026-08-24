@@ -1,9 +1,11 @@
 <?php
 
+use App\Models\Accommodation;
 use App\Models\DayItineraryItem;
 use App\Models\DayNode;
 use App\Models\DayTask;
 use App\Models\FoodSpot;
+use App\Models\TransportLeg;
 use App\Models\Trip;
 use App\Models\User;
 use Illuminate\Support\Facades\Artisan;
@@ -462,6 +464,58 @@ test('trip management can edit toggle and reorder day slots', function () {
         ->sort_order->toBe(1010);
 
     expect($secondSlot->fresh()->sort_order)->toBe(1000);
+});
+
+test('trip management can search and edit shared assets', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+    $hotel = Accommodation::query()->where('stable_key', 'mets-akihabara')->firstOrFail();
+    $transport = TransportLeg::query()->create([
+        'stable_key' => 'test-asset-edit-transport',
+        'mode' => 'rail',
+        'route_label' => 'Akihabara to Toyosu test hop',
+        'origin' => 'Akihabara',
+        'destination' => 'Toyosu',
+        'notes' => null,
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage')
+        ->set('assetSearch', 'Mets')
+        ->assertSee('JR East Hotel Mets Premier Akihabara')
+        ->call('selectAsset', $hotel->id)
+        ->set('assetEditForm.neighborhood', 'Akihabara Station east')
+        ->set('assetEditForm.reservation_url', 'https://hotel.example.test/reservation')
+        ->set('assetEditForm.latitude', '35.6984000')
+        ->set('assetEditForm.longitude', '139.7730000')
+        ->set('assetEditForm.notes', 'Use as the low-friction arrival base.')
+        ->call('updateAsset')
+        ->set('assetTab', 'transport')
+        ->set('assetSearch', 'Toyosu test')
+        ->assertSee('Akihabara to Toyosu test hop')
+        ->call('selectAsset', $transport->id)
+        ->set('assetEditForm.route_label', 'Akihabara to Toyosu light transfer')
+        ->set('assetEditForm.duration_label', '25-35 min')
+        ->set('assetEditForm.operator', 'Tokyo Metro')
+        ->set('assetEditForm.reservation_url', 'https://rail.example.test/route')
+        ->set('assetEditForm.notes', 'Keep luggage complexity low.')
+        ->call('updateAsset')
+        ->assertHasNoErrors();
+
+    expect($hotel->fresh())
+        ->neighborhood->toBe('Akihabara Station east')
+        ->reservation_url->toBe('https://hotel.example.test/reservation')
+        ->latitude->toBe('35.6984000')
+        ->longitude->toBe('139.7730000')
+        ->notes->toBe('Use as the low-friction arrival base.');
+
+    expect($transport->fresh())
+        ->route_label->toBe('Akihabara to Toyosu light transfer')
+        ->duration_label->toBe('25-35 min')
+        ->operator->toBe('Tokyo Metro')
+        ->reservation_url->toBe('https://rail.example.test/route')
+        ->notes->toBe('Keep luggage complexity low.');
 });
 
 test('public day show page hides admin only planning data', function () {
