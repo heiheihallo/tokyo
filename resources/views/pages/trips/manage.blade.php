@@ -21,12 +21,14 @@ new #[Title('Manage trips')] class extends Component {
     public ?int $selectedTripId = null;
     public ?int $selectedVariantId = null;
     public ?int $selectedDayId = null;
+    public ?int $selectedSlotId = null;
     public string $assetTab = 'accommodations';
 
     public array $tripForm = ['name' => '', 'summary' => '', 'starts_on' => '', 'ends_on' => '', 'arrival_preference' => 'HND'];
     public array $variantForm = ['name' => '', 'budget_scenario' => 'value', 'stopover_type' => '', 'flight_strategy' => ''];
     public array $dayForm = [];
-    public array $slotForm = ['item_type' => 'activity', 'time_label' => '', 'title' => '', 'location_label' => '', 'subject_ref' => '', 'summary' => '', 'is_public' => true];
+    public array $slotForm = ['item_type' => 'activity', 'time_label' => '', 'title' => '', 'location_label' => '', 'subject_ref' => '', 'latitude' => '', 'longitude' => '', 'summary' => '', 'is_public' => true];
+    public array $slotEditForm = [];
     public array $taskForm = ['task_type' => 'todo', 'title' => '', 'priority' => 'medium', 'notes' => ''];
     public array $assetForm = ['name' => '', 'city' => '', 'country' => '', 'notes' => ''];
 
@@ -144,6 +146,8 @@ new #[Title('Manage trips')] class extends Component {
     public function selectDay(int $dayId): void
     {
         $this->selectedDayId = $dayId;
+        $this->selectedSlotId = null;
+        $this->slotEditForm = [];
         $this->loadDayForm();
     }
 
@@ -228,11 +232,14 @@ new #[Title('Manage trips')] class extends Component {
             'slotForm.title' => ['required', 'string', 'max:255'],
             'slotForm.location_label' => ['nullable', 'string', 'max:255'],
             'slotForm.subject_ref' => ['nullable', 'string', 'max:255'],
+            'slotForm.latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'slotForm.longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'slotForm.summary' => ['nullable', 'string', 'max:1000'],
             'slotForm.is_public' => ['boolean'],
         ]);
 
         [$subjectType, $subjectId] = $this->parseSubjectRef($validated['slotForm']['subject_ref']);
+        $subject = $this->findSubject($subjectType, $subjectId);
 
         $this->selectedDay->itineraryItems()->create([
             'trip_id' => $this->selectedDay->trip_id,
@@ -244,6 +251,8 @@ new #[Title('Manage trips')] class extends Component {
             'location_label' => $validated['slotForm']['location_label'] ?: null,
             'subject_type' => $subjectType,
             'subject_id' => $subjectId,
+            'latitude' => $this->blankToNull($validated['slotForm']['latitude']) ?? $subject?->latitude,
+            'longitude' => $this->blankToNull($validated['slotForm']['longitude']) ?? $subject?->longitude,
             'summary' => $validated['slotForm']['summary'] ?: null,
             'is_public' => (bool) $validated['slotForm']['is_public'],
             'sort_order' => ($this->selectedDay->itineraryItems()->max('sort_order') ?? 0) + 10,
@@ -251,9 +260,118 @@ new #[Title('Manage trips')] class extends Component {
         ]);
 
         unset($this->selectedDay);
-        $this->slotForm = ['item_type' => 'activity', 'time_label' => '', 'title' => '', 'location_label' => '', 'subject_ref' => '', 'summary' => '', 'is_public' => true];
+        $this->slotForm = ['item_type' => 'activity', 'time_label' => '', 'title' => '', 'location_label' => '', 'subject_ref' => '', 'latitude' => '', 'longitude' => '', 'summary' => '', 'is_public' => true];
 
         Flux::toast(variant: 'success', text: __('Slot added.'));
+    }
+
+    public function selectSlot(int $slotId): void
+    {
+        $slot = $this->selectedDay?->itineraryItems()->whereKey($slotId)->first();
+
+        if (! $slot) {
+            return;
+        }
+
+        $this->selectedSlotId = $slot->id;
+        $this->slotEditForm = [
+            'item_type' => $slot->item_type,
+            'time_label' => $slot->time_label ?? '',
+            'title' => $slot->title,
+            'location_label' => $slot->location_label ?? '',
+            'subject_ref' => $this->subjectRefForSlot($slot),
+            'latitude' => $slot->latitude,
+            'longitude' => $slot->longitude,
+            'summary' => $slot->summary ?? '',
+            'is_public' => $slot->is_public,
+        ];
+    }
+
+    public function updateSlot(): void
+    {
+        $slot = $this->selectedSlot;
+
+        if (! $slot) {
+            return;
+        }
+
+        $validated = $this->validate([
+            'slotEditForm.item_type' => ['required', 'in:stay,move,activity,food,buffer,note'],
+            'slotEditForm.time_label' => ['nullable', 'string', 'max:50'],
+            'slotEditForm.title' => ['required', 'string', 'max:255'],
+            'slotEditForm.location_label' => ['nullable', 'string', 'max:255'],
+            'slotEditForm.subject_ref' => ['nullable', 'string', 'max:255'],
+            'slotEditForm.latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'slotEditForm.longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'slotEditForm.summary' => ['nullable', 'string', 'max:1000'],
+            'slotEditForm.is_public' => ['boolean'],
+        ]);
+
+        [$subjectType, $subjectId] = $this->parseSubjectRef($validated['slotEditForm']['subject_ref']);
+
+        $slot->fill([
+            'item_type' => $validated['slotEditForm']['item_type'],
+            'time_label' => $validated['slotEditForm']['time_label'] ?: null,
+            'title' => $validated['slotEditForm']['title'],
+            'location_label' => $validated['slotEditForm']['location_label'] ?: null,
+            'subject_type' => $subjectType,
+            'subject_id' => $subjectId,
+            'latitude' => $this->blankToNull($validated['slotEditForm']['latitude']),
+            'longitude' => $this->blankToNull($validated['slotEditForm']['longitude']),
+            'summary' => $validated['slotEditForm']['summary'] ?: null,
+            'is_public' => (bool) $validated['slotEditForm']['is_public'],
+        ])->save();
+
+        unset($this->selectedDay, $this->selectedSlot);
+        $this->selectSlot($slot->id);
+
+        Flux::toast(variant: 'success', text: __('Slot updated.'));
+    }
+
+    public function toggleSlotPublication(int $slotId): void
+    {
+        $slot = $this->selectedDay?->itineraryItems()->whereKey($slotId)->first();
+
+        if (! $slot) {
+            return;
+        }
+
+        $slot->update(['is_public' => ! $slot->is_public]);
+        unset($this->selectedDay, $this->selectedSlot);
+
+        if ($this->selectedSlotId === $slot->id) {
+            $this->selectSlot($slot->id);
+        }
+    }
+
+    public function moveSlot(int $slotId, string $direction): void
+    {
+        $day = $this->selectedDay;
+        $slot = $day?->itineraryItems->firstWhere('id', $slotId);
+
+        if (! $day || ! $slot || ! in_array($direction, ['up', 'down'], true)) {
+            return;
+        }
+
+        $slots = $day->itineraryItems->values();
+        $index = $slots->search(fn (DayItineraryItem $candidate) => $candidate->id === $slot->id);
+        $swapIndex = $direction === 'up' ? $index - 1 : $index + 1;
+
+        if ($index === false || ! $slots->has($swapIndex)) {
+            return;
+        }
+
+        $other = $slots->get($swapIndex);
+        [$slotOrder, $otherOrder] = [$slot->sort_order, $other->sort_order];
+
+        $slot->update(['sort_order' => $otherOrder]);
+        $other->update(['sort_order' => $slotOrder]);
+
+        unset($this->selectedDay, $this->selectedSlot);
+
+        if ($this->selectedSlotId === $slot->id) {
+            $this->selectSlot($slot->id);
+        }
     }
 
     public function deleteSlot(int $slotId): void
@@ -265,7 +383,12 @@ new #[Title('Manage trips')] class extends Component {
         }
 
         $slot->delete();
-        unset($this->selectedDay);
+        unset($this->selectedDay, $this->selectedSlot);
+
+        if ($this->selectedSlotId === $slotId) {
+            $this->selectedSlotId = null;
+            $this->slotEditForm = [];
+        }
 
         Flux::toast(text: __('Slot removed.'));
     }
@@ -360,6 +483,14 @@ new #[Title('Manage trips')] class extends Component {
     }
 
     #[Computed]
+    public function selectedSlot(): ?DayItineraryItem
+    {
+        return $this->selectedSlotId && $this->selectedDay
+            ? $this->selectedDay->itineraryItems->firstWhere('id', $this->selectedSlotId)
+            : null;
+    }
+
+    #[Computed]
     public function assets(): EloquentCollection
     {
         return $this->assetModel()::query()->orderBy('name')->limit(20)->get();
@@ -392,12 +523,16 @@ new #[Title('Manage trips')] class extends Component {
     {
         $this->selectedVariantId = $this->selectedTrip?->defaultVariant()?->id;
         $this->selectedDayId = $this->selectedVariant?->dayNodes()->orderBy('day_number')->value('id');
+        $this->selectedSlotId = null;
+        $this->slotEditForm = [];
         $this->loadDayForm();
     }
 
     public function updatedSelectedVariantId(): void
     {
         $this->selectedDayId = $this->selectedVariant?->dayNodes()->orderBy('day_number')->value('id');
+        $this->selectedSlotId = null;
+        $this->slotEditForm = [];
         $this->loadDayForm();
     }
 
@@ -445,6 +580,21 @@ new #[Title('Manage trips')] class extends Component {
         }
 
         return [$class, (int) $id];
+    }
+
+    private function subjectRefForSlot(DayItineraryItem $slot): string
+    {
+        return $slot->subject_type && $slot->subject_id ? $slot->subject_type.':'.$slot->subject_id : '';
+    }
+
+    private function findSubject(?string $subjectType, ?int $subjectId): mixed
+    {
+        return $subjectType && $subjectId ? $subjectType::query()->find($subjectId) : null;
+    }
+
+    private function blankToNull(mixed $value): mixed
+    {
+        return $value === '' ? null : $value;
     }
 }; ?>
 
@@ -677,6 +827,14 @@ new #[Title('Manage trips')] class extends Component {
                                                     <flux:badge>{{ $slot->item_type }}</flux:badge>
                                                     @if ($slot->time_label)
                                                         <span class="text-sm font-medium text-zinc-700 dark:text-zinc-200">{{ $slot->time_label }}</span>
+                                                    @else
+                                                        <flux:badge color="amber">{{ __('No time') }}</flux:badge>
+                                                    @endif
+                                                    @unless ($slot->subject)
+                                                        <flux:badge color="amber">{{ __('No asset') }}</flux:badge>
+                                                    @endunless
+                                                    @if ($slot->latitude === null || $slot->longitude === null)
+                                                        <flux:badge color="amber">{{ __('No map') }}</flux:badge>
                                                     @endif
                                                     @unless ($slot->is_public)
                                                         <flux:badge color="zinc">{{ __('Private') }}</flux:badge>
@@ -691,9 +849,23 @@ new #[Title('Manage trips')] class extends Component {
                                                 @endif
                                             </div>
 
-                                            <flux:button size="xs" variant="danger" wire:click="deleteSlot({{ $slot->id }})">
-                                                {{ __('Remove') }}
-                                            </flux:button>
+                                            <div class="flex flex-wrap gap-2 sm:justify-end">
+                                                <flux:button size="xs" icon="arrow-up" wire:click="moveSlot({{ $slot->id }}, 'up')" :disabled="$loop->first">
+                                                    {{ __('Up') }}
+                                                </flux:button>
+                                                <flux:button size="xs" icon="arrow-down" wire:click="moveSlot({{ $slot->id }}, 'down')" :disabled="$loop->last">
+                                                    {{ __('Down') }}
+                                                </flux:button>
+                                                <flux:button size="xs" wire:click="toggleSlotPublication({{ $slot->id }})">
+                                                    {{ $slot->is_public ? __('Make private') : __('Make public') }}
+                                                </flux:button>
+                                                <flux:button size="xs" icon="pencil-square" wire:click="selectSlot({{ $slot->id }})">
+                                                    {{ __('Edit') }}
+                                                </flux:button>
+                                                <flux:button size="xs" variant="danger" wire:click="deleteSlot({{ $slot->id }})">
+                                                    {{ __('Remove') }}
+                                                </flux:button>
+                                            </div>
                                         </div>
                                     </div>
                                 @empty
@@ -701,33 +873,79 @@ new #[Title('Manage trips')] class extends Component {
                                 @endforelse
                             </div>
 
-                            <form wire:submit="createSlot" class="space-y-4">
-                                <flux:select wire:model="slotForm.item_type" :label="__('Type')">
-                                    <flux:select.option value="stay">{{ __('Stay / hotel') }}</flux:select.option>
-                                    <flux:select.option value="move">{{ __('Move / transport') }}</flux:select.option>
-                                    <flux:select.option value="activity">{{ __('Activity') }}</flux:select.option>
-                                    <flux:select.option value="food">{{ __('Food') }}</flux:select.option>
-                                    <flux:select.option value="buffer">{{ __('Buffer') }}</flux:select.option>
-                                    <flux:select.option value="note">{{ __('Note') }}</flux:select.option>
-                                </flux:select>
+                            <div class="space-y-6">
+                                @if ($this->selectedSlot)
+                                    <form wire:submit="updateSlot" class="space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                                        <div>
+                                            <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Edit slot') }}</div>
+                                            <div class="mt-1 text-sm text-zinc-500">{{ $this->selectedSlot->title }}</div>
+                                        </div>
 
-                                <flux:input wire:model="slotForm.time_label" :label="__('Time label')" placeholder="10:30, morning, after lunch" />
-                                <flux:input wire:model="slotForm.title" :label="__('Title')" />
-                                <flux:input wire:model="slotForm.location_label" :label="__('Location')" />
+                                        <flux:select wire:model="slotEditForm.item_type" :label="__('Type')">
+                                            <flux:select.option value="stay">{{ __('Stay / hotel') }}</flux:select.option>
+                                            <flux:select.option value="move">{{ __('Move / transport') }}</flux:select.option>
+                                            <flux:select.option value="activity">{{ __('Activity') }}</flux:select.option>
+                                            <flux:select.option value="food">{{ __('Food') }}</flux:select.option>
+                                            <flux:select.option value="buffer">{{ __('Buffer') }}</flux:select.option>
+                                            <flux:select.option value="note">{{ __('Note') }}</flux:select.option>
+                                        </flux:select>
 
-                                <flux:select wire:model="slotForm.subject_ref" :label="__('Linked shared asset')">
-                                    <flux:select.option value="">{{ __('No linked asset') }}</flux:select.option>
-                                    @foreach ($this->slotSubjects as $group => $assets)
-                                        @foreach ($assets as $asset)
-                                            <flux:select.option value="{{ $asset['value'] }}">{{ $group }} · {{ $asset['label'] }}</flux:select.option>
+                                        <flux:input wire:model="slotEditForm.time_label" :label="__('Time label')" placeholder="10:30, morning, after lunch" />
+                                        <flux:input wire:model="slotEditForm.title" :label="__('Title')" />
+                                        <flux:input wire:model="slotEditForm.location_label" :label="__('Location')" />
+
+                                        <flux:select wire:model="slotEditForm.subject_ref" :label="__('Linked shared asset')">
+                                            <flux:select.option value="">{{ __('No linked asset') }}</flux:select.option>
+                                            @foreach ($this->slotSubjects as $group => $assets)
+                                                @foreach ($assets as $asset)
+                                                    <flux:select.option value="{{ $asset['value'] }}">{{ $group }} · {{ $asset['label'] }}</flux:select.option>
+                                                @endforeach
+                                            @endforeach
+                                        </flux:select>
+
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <flux:input wire:model="slotEditForm.latitude" :label="__('Latitude')" type="number" step="0.0000001" />
+                                            <flux:input wire:model="slotEditForm.longitude" :label="__('Longitude')" type="number" step="0.0000001" />
+                                        </div>
+                                        <flux:textarea wire:model="slotEditForm.summary" :label="__('Traveler note')" rows="3" />
+                                        <flux:checkbox wire:model="slotEditForm.is_public" :label="__('Show publicly')" />
+                                        <flux:button type="submit" variant="primary" icon="check">{{ __('Save slot') }}</flux:button>
+                                    </form>
+                                @endif
+
+                                <form wire:submit="createSlot" class="space-y-4">
+                                    <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Add slot') }}</div>
+                                    <flux:select wire:model="slotForm.item_type" :label="__('Type')">
+                                        <flux:select.option value="stay">{{ __('Stay / hotel') }}</flux:select.option>
+                                        <flux:select.option value="move">{{ __('Move / transport') }}</flux:select.option>
+                                        <flux:select.option value="activity">{{ __('Activity') }}</flux:select.option>
+                                        <flux:select.option value="food">{{ __('Food') }}</flux:select.option>
+                                        <flux:select.option value="buffer">{{ __('Buffer') }}</flux:select.option>
+                                        <flux:select.option value="note">{{ __('Note') }}</flux:select.option>
+                                    </flux:select>
+
+                                    <flux:input wire:model="slotForm.time_label" :label="__('Time label')" placeholder="10:30, morning, after lunch" />
+                                    <flux:input wire:model="slotForm.title" :label="__('Title')" />
+                                    <flux:input wire:model="slotForm.location_label" :label="__('Location')" />
+
+                                    <flux:select wire:model="slotForm.subject_ref" :label="__('Linked shared asset')">
+                                        <flux:select.option value="">{{ __('No linked asset') }}</flux:select.option>
+                                        @foreach ($this->slotSubjects as $group => $assets)
+                                            @foreach ($assets as $asset)
+                                                <flux:select.option value="{{ $asset['value'] }}">{{ $group }} · {{ $asset['label'] }}</flux:select.option>
+                                            @endforeach
                                         @endforeach
-                                    @endforeach
-                                </flux:select>
+                                    </flux:select>
 
-                                <flux:textarea wire:model="slotForm.summary" :label="__('Traveler note')" rows="3" />
-                                <flux:checkbox wire:model="slotForm.is_public" :label="__('Show publicly')" />
-                                <flux:button type="submit" variant="primary" icon="plus">{{ __('Add slot') }}</flux:button>
-                            </form>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <flux:input wire:model="slotForm.latitude" :label="__('Latitude')" type="number" step="0.0000001" />
+                                        <flux:input wire:model="slotForm.longitude" :label="__('Longitude')" type="number" step="0.0000001" />
+                                    </div>
+                                    <flux:textarea wire:model="slotForm.summary" :label="__('Traveler note')" rows="3" />
+                                    <flux:checkbox wire:model="slotForm.is_public" :label="__('Show publicly')" />
+                                    <flux:button type="submit" variant="primary" icon="plus">{{ __('Add slot') }}</flux:button>
+                                </form>
+                            </div>
                         </div>
                     </flux:card>
 

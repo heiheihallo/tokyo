@@ -3,6 +3,7 @@
 use App\Models\DayItineraryItem;
 use App\Models\DayNode;
 use App\Models\DayTask;
+use App\Models\FoodSpot;
 use App\Models\Trip;
 use App\Models\User;
 use Illuminate\Support\Facades\Artisan;
@@ -396,6 +397,71 @@ test('trip management can create typed day slots and tasks', function () {
 
     expect(DayItineraryItem::query()->where('day_node_id', $day->id)->where('title', 'Leave for Toyosu')->exists())->toBeTrue();
     expect(DayTask::query()->where('day_node_id', $day->id)->where('title', 'Confirm Toyosu transfer timing')->exists())->toBeTrue();
+});
+
+test('trip management can edit toggle and reorder day slots', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
+    $foodSpot = FoodSpot::query()->where('stable_key', 'tokyo-ramen-street')->firstOrFail();
+
+    $firstSlot = $day->itineraryItems()->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'stable_key' => 'admin-edit-first-slot',
+        'item_type' => 'note',
+        'title' => 'First custom slot',
+        'is_public' => true,
+        'sort_order' => 1000,
+        'details' => [],
+    ]);
+
+    $secondSlot = $day->itineraryItems()->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'stable_key' => 'admin-edit-second-slot',
+        'item_type' => 'buffer',
+        'title' => 'Second custom slot',
+        'is_public' => true,
+        'sort_order' => 1010,
+        'details' => [],
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage')
+        ->call('selectDay', $day->id)
+        ->call('selectSlot', $firstSlot->id)
+        ->set('slotEditForm.item_type', 'food')
+        ->set('slotEditForm.time_label', 'lunch anchor')
+        ->set('slotEditForm.title', 'Tokyo Station ramen lunch')
+        ->set('slotEditForm.location_label', 'Tokyo Station')
+        ->set('slotEditForm.subject_ref', $foodSpot::class.':'.$foodSpot->id)
+        ->set('slotEditForm.latitude', '35.6812000')
+        ->set('slotEditForm.longitude', '139.7671000')
+        ->set('slotEditForm.summary', 'Use this as the day meal anchor.')
+        ->set('slotEditForm.is_public', false)
+        ->call('updateSlot')
+        ->call('toggleSlotPublication', $firstSlot->id)
+        ->call('moveSlot', $firstSlot->id, 'down')
+        ->assertHasNoErrors()
+        ->assertSee('Tokyo Station ramen lunch')
+        ->assertSee('lunch anchor');
+
+    expect($firstSlot->fresh())
+        ->item_type->toBe('food')
+        ->time_label->toBe('lunch anchor')
+        ->title->toBe('Tokyo Station ramen lunch')
+        ->subject_type->toBe($foodSpot::class)
+        ->subject_id->toBe($foodSpot->id)
+        ->latitude->toBe('35.6812000')
+        ->longitude->toBe('139.7671000')
+        ->is_public->toBeTrue()
+        ->sort_order->toBe(1010);
+
+    expect($secondSlot->fresh()->sort_order)->toBe(1000);
 });
 
 test('public day show page hides admin only planning data', function () {
