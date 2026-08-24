@@ -24,6 +24,7 @@ class Trip extends Model
         'is_public',
         'published_at',
         'visibility',
+        'frontend_access',
         'metadata',
     ];
 
@@ -68,7 +69,7 @@ class Trip extends Model
     public function publishedVariants(): HasMany
     {
         return $this->hasMany(TripVariant::class)
-            ->where(fn ($query) => $query->where('is_public', true)->orWhere('visibility', 'public'))
+            ->where(fn ($query) => $query->where('is_public', true)->orWhere('visibility', 'public')->orWhere('frontend_access', 'public'))
             ->orderBy('sort_order');
     }
 
@@ -77,10 +78,12 @@ class Trip extends Model
         return $this->hasMany(TripVariant::class)
             ->where(function ($query) use ($user): void {
                 $query->where('is_public', true)
-                    ->orWhere('visibility', 'public');
+                    ->orWhere('visibility', 'public')
+                    ->orWhere('frontend_access', 'public');
 
                 if ($user) {
-                    $query->orWhere('visibility', 'family');
+                    $query->orWhere('visibility', 'family')
+                        ->orWhere('frontend_access', 'authenticated');
                 }
             })
             ->orderBy('sort_order');
@@ -97,6 +100,7 @@ class Trip extends Model
             'is_public' => true,
             'published_at' => $this->published_at ?? now(),
             'visibility' => 'public',
+            'frontend_access' => 'public',
         ])->save();
     }
 
@@ -106,6 +110,7 @@ class Trip extends Model
             'is_public' => false,
             'published_at' => null,
             'visibility' => 'private',
+            'frontend_access' => 'private',
         ])->save();
     }
 
@@ -117,18 +122,33 @@ class Trip extends Model
 
         $this->forceFill([
             'visibility' => $visibility,
+            'frontend_access' => $this->frontendAccessFromVisibility($visibility),
             'is_public' => $visibility === 'public',
             'published_at' => $visibility === 'public' ? ($this->published_at ?? now()) : null,
         ])->save();
     }
 
+    public function setFrontendAccess(string $access): void
+    {
+        if (! in_array($access, ['private', 'authenticated', 'public'], true)) {
+            return;
+        }
+
+        $this->forceFill([
+            'frontend_access' => $access,
+            'visibility' => $this->visibilityFromFrontendAccess($access),
+            'is_public' => $access === 'public',
+            'published_at' => $access === 'public' ? ($this->published_at ?? now()) : null,
+        ])->save();
+    }
+
     public function isVisibleTo(?User $user): bool
     {
-        if ($this->is_public || $this->visibility === 'public') {
+        if ($this->is_public || $this->visibility === 'public' || $this->travelerAccessMode() === 'public') {
             return true;
         }
 
-        return $this->visibility === 'family' && $user !== null;
+        return $this->travelerAccessMode() === 'authenticated' && $user !== null;
     }
 
     public function visibilityLabel(): string
@@ -137,6 +157,38 @@ class Trip extends Model
             'public' => 'Public',
             'family' => 'Family',
             default => 'Private',
+        };
+    }
+
+    public function travelerAccessMode(): string
+    {
+        return $this->frontend_access ?? $this->frontendAccessFromVisibility($this->visibility);
+    }
+
+    public function travelerAccessLabel(): string
+    {
+        return match ($this->travelerAccessMode()) {
+            'public' => 'Public launch',
+            'authenticated' => 'Planning login',
+            default => 'Private',
+        };
+    }
+
+    private function frontendAccessFromVisibility(string $visibility): string
+    {
+        return match ($visibility) {
+            'public' => 'public',
+            'family' => 'authenticated',
+            default => 'private',
+        };
+    }
+
+    private function visibilityFromFrontendAccess(string $access): string
+    {
+        return match ($access) {
+            'public' => 'public',
+            'authenticated' => 'family',
+            default => 'private',
         };
     }
 

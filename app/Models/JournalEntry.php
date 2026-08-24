@@ -2,16 +2,22 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasTripAssetMedia;
 use Database\Factories\JournalEntryFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Collection;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
-class JournalEntry extends Model
+class JournalEntry extends Model implements HasMedia
 {
     /** @use HasFactory<JournalEntryFactory> */
     use HasFactory;
+
+    use HasTripAssetMedia;
 
     protected $fillable = [
         'trip_id',
@@ -61,6 +67,17 @@ class JournalEntry extends Model
     public function dayItineraryItem(): BelongsTo
     {
         return $this->belongsTo(DayItineraryItem::class);
+    }
+
+    /**
+     * @return Collection<int, Media>
+     */
+    public function publicMedia(): Collection
+    {
+        return $this->getMedia(self::MEDIA_COLLECTION_MAIN_IMAGE)
+            ->merge($this->getMedia(self::MEDIA_COLLECTION_IMAGES))
+            ->filter(fn (Media $media): bool => data_get($media->custom_properties, 'visibility', 'private') === 'public')
+            ->values();
     }
 
     public function scopeVisibleTo(Builder $query, ?User $user): Builder

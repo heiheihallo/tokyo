@@ -38,10 +38,12 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
         return Trip::query()
             ->when(! $this->canPreview(), fn ($query) => $query->where(function ($query): void {
                 $query->where('is_public', true)
-                    ->orWhere('visibility', 'public');
+                    ->orWhere('visibility', 'public')
+                    ->orWhere('frontend_access', 'public');
 
                 if (auth()->check()) {
-                    $query->orWhere('visibility', 'family');
+                    $query->orWhere('visibility', 'family')
+                        ->orWhere('frontend_access', 'authenticated');
                 }
             }))
             ->findOrFail($this->tripId);
@@ -189,7 +191,7 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
     {
         return $this->day->journalEntries()
             ->visibleTo(auth()->user())
-            ->with('dayItineraryItem')
+            ->with(['dayItineraryItem', 'media'])
             ->get();
     }
 
@@ -349,6 +351,16 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
                                                         <div class="font-medium text-zinc-950 dark:text-white">{{ __('Updates') }}</div>
                                                         @foreach ($this->slotJournalEntries($slot) as $entry)
                                                             <article class="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800">
+                                                                @if ($entry->publicMedia()->isNotEmpty())
+                                                                    @php
+                                                                        $media = $entry->publicMedia()->first();
+                                                                    @endphp
+                                                                    <img
+                                                                        src="{{ $media->hasGeneratedConversion('thumb') ? $media->getUrl('thumb') : $media->getUrl() }}"
+                                                                        alt="{{ data_get($media->custom_properties, 'alt', $entry->title) }}"
+                                                                        class="mb-3 aspect-[4/3] w-32 rounded-md object-cover"
+                                                                    >
+                                                                @endif
                                                                 <div class="text-xs text-zinc-500">{{ $entry->happened_at?->format('M j, H:i') }}</div>
                                                                 <div class="mt-1 font-medium text-zinc-950 dark:text-white">{{ $entry->title }}</div>
                                                                 @if ($entry->excerpt)
@@ -400,6 +412,22 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
                                 @endif
                                 @if ($entry->body)
                                     <div class="mt-3 whitespace-pre-line text-sm leading-6 text-zinc-600 dark:text-zinc-300">{{ $entry->body }}</div>
+                                @endif
+                                @if ($entry->publicMedia()->isNotEmpty())
+                                    <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                                        @foreach ($entry->publicMedia() as $media)
+                                            <figure>
+                                                <img
+                                                    src="{{ $media->hasGeneratedConversion('card') ? $media->getUrl('card') : $media->getUrl() }}"
+                                                    alt="{{ data_get($media->custom_properties, 'alt', $entry->title) }}"
+                                                    class="aspect-[4/3] w-full rounded-md object-cover"
+                                                >
+                                                @if (data_get($media->custom_properties, 'caption'))
+                                                    <figcaption class="mt-2 text-sm text-zinc-500">{{ data_get($media->custom_properties, 'caption') }}</figcaption>
+                                                @endif
+                                            </figure>
+                                        @endforeach
+                                    </div>
                                 @endif
                             </article>
                         @endforeach

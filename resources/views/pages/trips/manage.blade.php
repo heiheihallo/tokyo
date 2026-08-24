@@ -18,8 +18,13 @@ use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Component;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
+use Livewire\WithFileUploads;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 new #[Title('Manage trips')] class extends Component {
+    use WithFileUploads;
+
     public ?int $selectedTripId = null;
     public ?int $selectedVariantId = null;
     public ?int $selectedDayId = null;
@@ -40,6 +45,8 @@ new #[Title('Manage trips')] class extends Component {
     public array $assetEditForm = [];
     public array $assetAttachForm = ['time_label' => '', 'title' => '', 'summary' => '', 'is_public' => true];
     public ?int $selectedJournalEntryId = null;
+    public ?TemporaryUploadedFile $journalMediaUpload = null;
+    public array $journalMediaForm = ['caption' => '', 'alt' => '', 'visibility' => 'private'];
     public array $journalForm = [
         'title' => '',
         'excerpt' => '',
@@ -156,6 +163,17 @@ new #[Title('Manage trips')] class extends Component {
         Flux::toast(variant: 'success', text: __('Trip visibility updated.'));
     }
 
+    public function setTripFrontendAccess(string $access): void
+    {
+        if (! $this->selectedTrip || ! in_array($access, ['private', 'authenticated', 'public'], true)) {
+            return;
+        }
+
+        $this->selectedTrip->setFrontendAccess($access);
+
+        Flux::toast(variant: 'success', text: __('Traveler access updated.'));
+    }
+
     public function toggleVariantPublication(int $variantId): void
     {
         $variant = $this->selectedTrip?->variants()->whereKey($variantId)->first();
@@ -188,6 +206,19 @@ new #[Title('Manage trips')] class extends Component {
         $variant->setVisibility($visibility);
 
         Flux::toast(variant: 'success', text: __('Timeline visibility updated.'));
+    }
+
+    public function setVariantFrontendAccess(int $variantId, string $access): void
+    {
+        $variant = $this->selectedTrip?->variants()->whereKey($variantId)->first();
+
+        if (! $variant || ! in_array($access, ['private', 'authenticated', 'public'], true)) {
+            return;
+        }
+
+        $variant->setFrontendAccess($access);
+
+        Flux::toast(variant: 'success', text: __('Timeline traveler access updated.'));
     }
 
     public function selectDay(int $dayId): void
@@ -652,6 +683,122 @@ new #[Title('Manage trips')] class extends Component {
         Flux::toast(text: __('Journal entry unpublished.'));
     }
 
+    public function addJournalMedia(): void
+    {
+        $entry = $this->selectedJournalEntry;
+
+        if (! $entry) {
+            return;
+        }
+
+        $validated = $this->validate([
+            'journalMediaUpload' => ['required', 'image', 'mimes:jpg,jpeg,png,webp,avif', 'max:5120'],
+            'journalMediaForm.caption' => ['nullable', 'string', 'max:500'],
+            'journalMediaForm.alt' => ['nullable', 'string', 'max:255'],
+            'journalMediaForm.visibility' => ['required', 'in:private,public'],
+        ]);
+
+        $upload = $validated['journalMediaUpload'];
+
+        $entry
+            ->addMedia($upload->getRealPath())
+            ->usingFileName($upload->hashName())
+            ->withCustomProperties([
+                'caption' => $this->blankToNull($validated['journalMediaForm']['caption']),
+                'alt' => $this->blankToNull($validated['journalMediaForm']['alt']),
+                'visibility' => $validated['journalMediaForm']['visibility'],
+            ])
+            ->toMediaCollection(JournalEntry::MEDIA_COLLECTION_IMAGES);
+
+        $this->journalMediaUpload = null;
+        $this->journalMediaForm = ['caption' => '', 'alt' => '', 'visibility' => 'private'];
+
+        unset($this->selectedJournalEntry, $this->journalEntries);
+        $this->selectJournalEntry($entry->id);
+
+        Flux::toast(variant: 'success', text: __('Journal image added.'));
+    }
+
+    public function setJournalHeroMedia(int $mediaId): void
+    {
+        $entry = $this->selectedJournalEntry;
+        $media = $this->selectedJournalMedia($mediaId);
+
+        if (! $entry || ! $media) {
+            return;
+        }
+
+        $entry->getMedia(JournalEntry::MEDIA_COLLECTION_MAIN_IMAGE)
+            ->reject(fn (Media $candidate): bool => $candidate->id === $media->id)
+            ->each->delete();
+
+        $media->update(['collection_name' => JournalEntry::MEDIA_COLLECTION_MAIN_IMAGE]);
+
+        unset($this->selectedJournalEntry, $this->journalEntries);
+        $this->selectJournalEntry($entry->id);
+
+        Flux::toast(variant: 'success', text: __('Journal hero image updated.'));
+    }
+
+    public function toggleJournalMediaVisibility(int $mediaId): void
+    {
+        $media = $this->selectedJournalMedia($mediaId);
+
+        if (! $media) {
+            return;
+        }
+
+        $media->setCustomProperty(
+            'visibility',
+            data_get($media->custom_properties, 'visibility', 'private') === 'public' ? 'private' : 'public',
+        );
+        $media->save();
+
+        unset($this->selectedJournalEntry, $this->journalEntries);
+    }
+
+    public function moveJournalMedia(int $mediaId, string $direction): void
+    {
+        $entry = $this->selectedJournalEntry;
+        $media = $this->selectedJournalMedia($mediaId);
+
+        if (! $entry || ! $media || ! in_array($direction, ['up', 'down'], true)) {
+            return;
+        }
+
+        $mediaItems = $entry->getMedia($media->collection_name)->values();
+        $index = $mediaItems->search(fn (Media $candidate): bool => $candidate->id === $media->id);
+        $swapIndex = $direction === 'up' ? $index - 1 : $index + 1;
+
+        if ($index === false || ! $mediaItems->has($swapIndex)) {
+            return;
+        }
+
+        $other = $mediaItems->get($swapIndex);
+        [$mediaOrder, $otherOrder] = [$media->order_column, $other->order_column];
+
+        $media->update(['order_column' => $otherOrder]);
+        $other->update(['order_column' => $mediaOrder]);
+
+        unset($this->selectedJournalEntry, $this->journalEntries);
+        $this->selectJournalEntry($entry->id);
+    }
+
+    public function removeJournalMedia(int $mediaId): void
+    {
+        $media = $this->selectedJournalMedia($mediaId);
+
+        if (! $media) {
+            return;
+        }
+
+        $media->delete();
+
+        unset($this->selectedJournalEntry, $this->journalEntries);
+
+        Flux::toast(text: __('Journal image removed.'));
+    }
+
     public function resetJournalForm(): void
     {
         $this->selectedJournalEntryId = null;
@@ -808,7 +955,7 @@ new #[Title('Manage trips')] class extends Component {
     public function selectedJournalEntry(): ?JournalEntry
     {
         return $this->selectedJournalEntryId && $this->selectedTrip
-            ? $this->selectedTrip->journalEntries()->whereKey($this->selectedJournalEntryId)->first()
+            ? $this->selectedTrip->journalEntries()->with('media')->whereKey($this->selectedJournalEntryId)->first()
             : null;
     }
 
@@ -1580,6 +1727,13 @@ new #[Title('Manage trips')] class extends Component {
             ->when($dayId, fn ($query) => $query->where('day_node_id', $dayId))
             ->exists() ? $slotId : null;
     }
+
+    private function selectedJournalMedia(int $mediaId): ?Media
+    {
+        return $this->selectedJournalEntry
+            ? $this->selectedJournalEntry->media()->whereKey($mediaId)->first()
+            : null;
+    }
 }; ?>
 
 <section class="flex h-full w-full flex-1 flex-col gap-6">
@@ -1611,8 +1765,8 @@ new #[Title('Manage trips')] class extends Component {
                             <div class="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-700">
                                 <div class="flex items-center justify-between gap-3">
                                     <div>
-                                        <div class="font-medium">{{ __('Traveler visibility') }}</div>
-                                        <div class="text-zinc-500">{{ $this->selectedTrip->visibilityLabel() }}</div>
+                                        <div class="font-medium">{{ __('Frontend access') }}</div>
+                                        <div class="text-zinc-500">{{ $this->selectedTrip->travelerAccessLabel() }}</div>
                                     </div>
                                     <flux:button size="sm" wire:click="toggleTripPublication">
                                         {{ $this->selectedTrip->visibility === 'public' || $this->selectedTrip->is_public ? __('Unpublish') : __('Publish') }}
@@ -1620,20 +1774,20 @@ new #[Title('Manage trips')] class extends Component {
                                 </div>
 
                                 <div class="mt-3 grid grid-cols-3 gap-2">
-                                    @foreach (['private' => __('Private'), 'family' => __('Family'), 'public' => __('Public')] as $visibility => $label)
-                                        <flux:button size="xs" :variant="$this->selectedTrip->visibility === $visibility ? 'primary' : 'outline'" wire:click="setTripVisibility('{{ $visibility }}')">
+                                    @foreach (['private' => __('Private'), 'authenticated' => __('Planning login'), 'public' => __('Public launch')] as $access => $label)
+                                        <flux:button size="xs" :variant="$this->selectedTrip->travelerAccessMode() === $access ? 'primary' : 'outline'" wire:click="setTripFrontendAccess('{{ $access }}')">
                                             {{ $label }}
                                         </flux:button>
                                     @endforeach
                                 </div>
 
-                                @if (($this->selectedTrip->is_public || $this->selectedTrip->visibility === 'public') && $this->publicTripUrl())
+                                @if ($this->selectedTrip->travelerAccessMode() === 'public' && $this->publicTripUrl())
                                     <flux:link class="mt-3 block truncate" :href="$this->publicTripUrl()" target="_blank">
                                         {{ $this->publicTripUrl() }}
                                     </flux:link>
-                                @elseif ($this->selectedTrip->visibility === 'family' && $this->publicTripUrl())
+                                @elseif ($this->selectedTrip->travelerAccessMode() === 'authenticated' && $this->publicTripUrl())
                                     <flux:link class="mt-3 block truncate" :href="$this->publicTripUrl()" target="_blank">
-                                        {{ __('Family link') }} · {{ $this->publicTripUrl() }}
+                                        {{ __('Planning login link') }} · {{ $this->publicTripUrl() }}
                                     </flux:link>
                                 @endif
 
@@ -1652,7 +1806,7 @@ new #[Title('Manage trips')] class extends Component {
                                     <div class="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-700">
                                         <div class="min-w-0">
                                             <div class="truncate font-medium">{{ $variant->name }}</div>
-                                            <div class="text-zinc-500">{{ $variant->visibilityLabel() }}</div>
+                                            <div class="text-zinc-500">{{ $variant->travelerAccessLabel() }}</div>
                                             @if ($this->publicPreviewUrl($variant))
                                                 <flux:link class="mt-1 block truncate text-xs text-amber-700 dark:text-amber-300" :href="$this->publicPreviewUrl($variant)" target="_blank">
                                                     {{ __('Preview') }}
@@ -1660,8 +1814,8 @@ new #[Title('Manage trips')] class extends Component {
                                             @endif
                                         </div>
                                         <div class="flex shrink-0 gap-1">
-                                            @foreach (['private' => __('Private'), 'family' => __('Family'), 'public' => __('Public')] as $visibility => $label)
-                                                <flux:button size="xs" :variant="$variant->visibility === $visibility ? 'primary' : 'outline'" wire:click="setVariantVisibility({{ $variant->id }}, '{{ $visibility }}')">
+                                            @foreach (['private' => __('Private'), 'authenticated' => __('Login'), 'public' => __('Public')] as $access => $label)
+                                                <flux:button size="xs" :variant="$variant->travelerAccessMode() === $access ? 'primary' : 'outline'" wire:click="setVariantFrontendAccess({{ $variant->id }}, '{{ $access }}')">
                                                     {{ $label }}
                                                 </flux:button>
                                             @endforeach
@@ -1969,6 +2123,74 @@ new #[Title('Manage trips')] class extends Component {
                                     @endif
                                 </div>
                             </form>
+
+                            @if ($this->selectedJournalEntry)
+                                <div class="mt-4 space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                                    <div>
+                                        <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Journal media') }}</div>
+                                        <div class="mt-1 text-sm text-zinc-500">{{ __('Images are private until marked public.') }}</div>
+                                    </div>
+
+                                    <form wire:submit="addJournalMedia" class="space-y-4">
+                                        <flux:input wire:model="journalMediaUpload" :label="__('Image')" type="file" accept="image/jpeg,image/png,image/webp,image/avif" />
+                                        <flux:input wire:model="journalMediaForm.caption" :label="__('Caption')" />
+                                        <flux:input wire:model="journalMediaForm.alt" :label="__('Alt text')" />
+                                        <flux:select wire:model="journalMediaForm.visibility" :label="__('Media visibility')">
+                                            <flux:select.option value="private">{{ __('Private') }}</flux:select.option>
+                                            <flux:select.option value="public">{{ __('Public') }}</flux:select.option>
+                                        </flux:select>
+                                        <flux:button type="submit" icon="photo" variant="primary">{{ __('Add image') }}</flux:button>
+                                    </form>
+
+                                    <div class="space-y-3">
+                                        @forelse ($this->selectedJournalEntry->getMedia(JournalEntry::MEDIA_COLLECTION_MAIN_IMAGE)->merge($this->selectedJournalEntry->getMedia(JournalEntry::MEDIA_COLLECTION_IMAGES)) as $media)
+                                            <div class="rounded-lg border border-zinc-200 p-3 dark:border-zinc-700" wire:key="journal-media-{{ $media->id }}">
+                                                <div class="grid gap-3 sm:grid-cols-[96px_minmax(0,1fr)]">
+                                                    <img
+                                                        src="{{ $media->hasGeneratedConversion('thumb') ? $media->getUrl('thumb') : $media->getUrl() }}"
+                                                        alt="{{ data_get($media->custom_properties, 'alt', $media->name) }}"
+                                                        class="aspect-[4/3] w-24 rounded-md object-cover"
+                                                    >
+                                                    <div class="min-w-0">
+                                                        <div class="flex flex-wrap items-center gap-2">
+                                                            <flux:badge color="{{ $media->collection_name === JournalEntry::MEDIA_COLLECTION_MAIN_IMAGE ? 'teal' : 'zinc' }}">
+                                                                {{ $media->collection_name === JournalEntry::MEDIA_COLLECTION_MAIN_IMAGE ? __('Hero') : __('Image') }}
+                                                            </flux:badge>
+                                                            <flux:badge color="{{ data_get($media->custom_properties, 'visibility', 'private') === 'public' ? 'green' : 'zinc' }}">
+                                                                {{ data_get($media->custom_properties, 'visibility', 'private') }}
+                                                            </flux:badge>
+                                                        </div>
+
+                                                        @if (data_get($media->custom_properties, 'caption'))
+                                                            <p class="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">{{ data_get($media->custom_properties, 'caption') }}</p>
+                                                        @else
+                                                            <p class="mt-2 truncate text-sm text-zinc-500">{{ $media->file_name }}</p>
+                                                        @endif
+
+                                                        <div class="mt-3 flex flex-wrap gap-2">
+                                                            <flux:button size="xs" wire:click="toggleJournalMediaVisibility({{ $media->id }})">
+                                                                {{ data_get($media->custom_properties, 'visibility', 'private') === 'public' ? __('Make private') : __('Make public') }}
+                                                            </flux:button>
+                                                            @if ($media->collection_name !== JournalEntry::MEDIA_COLLECTION_MAIN_IMAGE)
+                                                                <flux:button size="xs" wire:click="setJournalHeroMedia({{ $media->id }})">
+                                                                    {{ __('Set hero') }}
+                                                                </flux:button>
+                                                            @endif
+                                                            <flux:button size="xs" icon="arrow-up" wire:click="moveJournalMedia({{ $media->id }}, 'up')">{{ __('Up') }}</flux:button>
+                                                            <flux:button size="xs" icon="arrow-down" wire:click="moveJournalMedia({{ $media->id }}, 'down')">{{ __('Down') }}</flux:button>
+                                                            <flux:button size="xs" variant="danger" wire:click="removeJournalMedia({{ $media->id }})">{{ __('Remove') }}</flux:button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        @empty
+                                            <div class="rounded-lg border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">
+                                                {{ __('No images attached yet.') }}
+                                            </div>
+                                        @endforelse
+                                    </div>
+                                </div>
+                            @endif
                         </div>
                     </div>
                 </flux:card>

@@ -12,6 +12,7 @@ use App\Models\TransportLeg;
 use App\Models\Trip;
 use App\Models\TripVariant;
 use App\Models\User;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
 use Livewire\Livewire;
 
@@ -268,7 +269,7 @@ test('trip management can set family and private visibility modes', function () 
         ->call('setTripVisibility', 'family')
         ->call('setVariantVisibility', $variant->id, 'family')
         ->assertHasNoErrors()
-        ->assertSee('Family link')
+        ->assertSee('Planning login link')
         ->call('setTripVisibility', 'private')
         ->call('setVariantVisibility', $variant->id, 'private')
         ->assertHasNoErrors();
@@ -282,6 +283,41 @@ test('trip management can set family and private visibility modes', function () 
         ->visibility->toBe('private')
         ->is_public->toBeFalse()
         ->published_at->toBeNull();
+});
+
+test('trip management can set frontend access modes for planning and launch', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage')
+        ->set('selectedTripId', $trip->id)
+        ->set('selectedVariantId', $variant->id)
+        ->call('setTripFrontendAccess', 'authenticated')
+        ->call('setVariantFrontendAccess', $variant->id, 'authenticated')
+        ->assertHasNoErrors()
+        ->assertSee('Planning login link')
+        ->call('setTripFrontendAccess', 'public')
+        ->call('setVariantFrontendAccess', $variant->id, 'public')
+        ->assertHasNoErrors();
+
+    expect($trip->fresh())
+        ->frontend_access->toBe('public')
+        ->visibility->toBe('public')
+        ->is_public->toBeTrue();
+
+    expect($variant->fresh())
+        ->frontend_access->toBe('public')
+        ->visibility->toBe('public')
+        ->is_public->toBeTrue();
+
+    $this->get(route('trips.public.days.show', [$trip, $variant, $day]))
+        ->assertOk()
+        ->assertSee('Tokyo Station first easy day');
 });
 
 test('public journal entries respect publication and visibility', function () {
@@ -404,6 +440,80 @@ test('trip management can create update publish and unpublish journal entries', 
     expect($entry->fresh())
         ->visibility->toBe('private')
         ->published_at->toBeNull();
+});
+
+test('trip management can upload journal media with private default visibility', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
+    $entry = JournalEntry::factory()->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'day_node_id' => $day->id,
+        'title' => 'Media upload entry',
+    ]);
+
+    $upload = UploadedFile::fake()->image('journal.png', 2, 2);
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage')
+        ->set('selectedTripId', $trip->id)
+        ->call('selectJournalEntry', $entry->id)
+        ->set('journalMediaUpload', $upload)
+        ->set('journalMediaForm.caption', 'Hotel lobby arrival')
+        ->set('journalMediaForm.alt', 'Lobby lights')
+        ->call('addJournalMedia')
+        ->assertHasNoErrors()
+        ->assertSee('Hotel lobby arrival');
+
+    $media = $entry->fresh()->getFirstMedia(JournalEntry::MEDIA_COLLECTION_IMAGES);
+
+    expect($media)->not->toBeNull()
+        ->and(data_get($media->custom_properties, 'visibility'))->toBe('private')
+        ->and(data_get($media->custom_properties, 'caption'))->toBe('Hotel lobby arrival')
+        ->and(data_get($media->custom_properties, 'alt'))->toBe('Lobby lights');
+});
+
+test('public journal media renders only when the entry and image are public', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
+    $trip->publish();
+    $variant->publish();
+
+    $entry = JournalEntry::factory()->published()->create([
+        'trip_id' => $trip->id,
+        'trip_variant_id' => $variant->id,
+        'day_node_id' => $day->id,
+        'title' => 'Published image entry',
+        'excerpt' => 'This update has one public image.',
+    ]);
+
+    $publicPath = tempnam(sys_get_temp_dir(), 'journal-public-img');
+    $privatePath = tempnam(sys_get_temp_dir(), 'journal-private-img');
+    writeTripPlannerJournalTinyPng($publicPath);
+    writeTripPlannerJournalTinyPng($privatePath);
+
+    $entry->addMedia($publicPath)
+        ->withCustomProperties(['visibility' => 'public', 'caption' => 'Visible caption', 'alt' => 'Visible alt'])
+        ->toMediaCollection(JournalEntry::MEDIA_COLLECTION_IMAGES);
+
+    $entry->addMedia($privatePath)
+        ->withCustomProperties(['visibility' => 'private', 'caption' => 'Private caption', 'alt' => 'Private alt'])
+        ->toMediaCollection(JournalEntry::MEDIA_COLLECTION_IMAGES);
+
+    $this->get(route('trips.public.days.show', [$trip, $variant, $day]))
+        ->assertOk()
+        ->assertSee('Published image entry')
+        ->assertSee('Visible caption')
+        ->assertSee('Visible alt')
+        ->assertDontSee('Private caption')
+        ->assertDontSee('Private alt');
 });
 
 test('public day show page requires a published trip and timeline', function () {
@@ -1139,3 +1249,10 @@ test('public day map shows missing coordinate fallbacks for visible slots', func
         ->assertSee('Public missing coordinate stop')
         ->assertDontSee('Private missing coordinate stop');
 });
+
+function writeTripPlannerJournalTinyPng(string $path): void
+{
+    $image = imagecreatetruecolor(2, 2);
+    imagepng($image, $path);
+    imagedestroy($image);
+}

@@ -67,10 +67,12 @@ new #[Layout('layouts.public')] #[Title('Trip timeline')] class extends Componen
         return Trip::query()
             ->when(! $this->canPreview(), fn ($query) => $query->where(function ($query): void {
                 $query->where('is_public', true)
-                    ->orWhere('visibility', 'public');
+                    ->orWhere('visibility', 'public')
+                    ->orWhere('frontend_access', 'public');
 
                 if (auth()->check()) {
-                    $query->orWhere('visibility', 'family');
+                    $query->orWhere('visibility', 'family')
+                        ->orWhere('frontend_access', 'authenticated');
                 }
             }))
             ->findOrFail($this->tripId);
@@ -157,7 +159,7 @@ new #[Layout('layouts.public')] #[Title('Trip timeline')] class extends Componen
                 $query->whereNull('trip_variant_id')
                     ->orWhere('trip_variant_id', $this->variant->id);
             })
-            ->with(['dayNode', 'dayItineraryItem'])
+            ->with(['dayNode', 'dayItineraryItem', 'media'])
             ->limit(8)
             ->get();
     }
@@ -271,6 +273,16 @@ new #[Layout('layouts.public')] #[Title('Trip timeline')] class extends Componen
                         <div class="mt-4 grid gap-3">
                             @foreach ($this->journalEntries->take(3) as $entry)
                                 <article class="rounded-lg bg-zinc-50 p-4 dark:bg-zinc-800">
+                                    @if ($entry->publicMedia()->isNotEmpty())
+                                        @php
+                                            $media = $entry->publicMedia()->first();
+                                        @endphp
+                                        <img
+                                            src="{{ $media->hasGeneratedConversion('card') ? $media->getUrl('card') : $media->getUrl() }}"
+                                            alt="{{ data_get($media->custom_properties, 'alt', $entry->title) }}"
+                                            class="mb-4 aspect-[16/9] w-full rounded-md object-cover"
+                                        >
+                                    @endif
                                     <div class="flex flex-wrap items-center gap-2 text-sm text-zinc-500">
                                         @if ($entry->happened_at)
                                             <span>{{ $entry->happened_at->format('M j, Y H:i') }}</span>
@@ -401,6 +413,16 @@ new #[Layout('layouts.public')] #[Title('Trip timeline')] class extends Componen
                                                 <div class="mt-3 grid gap-2">
                                                     @foreach ($this->dayJournalEntries($day) as $entry)
                                                         <article class="rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-800">
+                                                            @if ($entry->publicMedia()->isNotEmpty())
+                                                                @php
+                                                                    $media = $entry->publicMedia()->first();
+                                                                @endphp
+                                                                <img
+                                                                    src="{{ $media->hasGeneratedConversion('thumb') ? $media->getUrl('thumb') : $media->getUrl() }}"
+                                                                    alt="{{ data_get($media->custom_properties, 'alt', $entry->title) }}"
+                                                                    class="mb-3 aspect-[4/3] w-32 rounded-md object-cover"
+                                                                >
+                                                            @endif
                                                             <div class="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
                                                                 @if ($entry->happened_at)
                                                                     <span>{{ $entry->happened_at->format('M j, H:i') }}</span>
