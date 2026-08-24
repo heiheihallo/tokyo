@@ -29,7 +29,7 @@ new #[Layout('layouts.public')] #[Title('Trip timeline')] class extends Componen
 
     public function mount(Trip $trip): void
     {
-        abort_unless($trip->is_public || $this->canPreview(), 404);
+        abort_unless($this->canPreview() || $trip->isVisibleTo(auth()->user()), 404);
 
         $variant = $this->availableVariantsQuery($trip)
             ->when($this->variantSlug, fn ($query) => $query->where('slug', $this->variantSlug))
@@ -64,7 +64,14 @@ new #[Layout('layouts.public')] #[Title('Trip timeline')] class extends Componen
     public function trip(): Trip
     {
         return Trip::query()
-            ->when(! $this->canPreview(), fn ($query) => $query->where('is_public', true))
+            ->when(! $this->canPreview(), fn ($query) => $query->where(function ($query): void {
+                $query->where('is_public', true)
+                    ->orWhere('visibility', 'public');
+
+                if (auth()->check()) {
+                    $query->orWhere('visibility', 'family');
+                }
+            }))
             ->findOrFail($this->tripId);
     }
 
@@ -171,7 +178,7 @@ new #[Layout('layouts.public')] #[Title('Trip timeline')] class extends Componen
     {
         return $this->canPreview()
             ? $trip->variants()
-            : $trip->publishedVariants();
+            : $trip->visibleVariantsFor(auth()->user());
     }
 }; ?>
 

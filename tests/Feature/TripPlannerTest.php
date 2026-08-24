@@ -164,6 +164,37 @@ test('published trip is visible publicly with only published timelines', functio
         ->assertDontSee($hiddenVariant->name);
 });
 
+test('family visible trips require authentication and show only family visible timelines', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $trip->unpublish();
+    $trip->variants()->get()->each->unpublish();
+
+    $familyVariant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $hiddenVariant = $trip->variants()->where('slug', 'premium-seoul-stopover')->firstOrFail();
+    $day = $familyVariant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
+
+    $trip->setVisibility('family');
+    $familyVariant->setVisibility('family');
+
+    $this->get(route('trips.public', $trip))->assertNotFound();
+    $this->get(route('trips.public.days.show', [$trip, $familyVariant, $day]))->assertNotFound();
+
+    $this->actingAs($user)
+        ->get(route('trips.public', $trip))
+        ->assertOk()
+        ->assertSee($familyVariant->name)
+        ->assertDontSee($hiddenVariant->name)
+        ->assertDontSee('Modeled cost');
+
+    $this->actingAs($user)
+        ->get(route('trips.public.days.show', [$trip, $familyVariant, $day]))
+        ->assertOk()
+        ->assertSee('Tokyo Station first easy day');
+});
+
 test('public trip page hides admin only planning data', function () {
     Artisan::call('trip:import-japan-reference');
 
@@ -211,11 +242,45 @@ test('trip management can toggle trip and variant publication', function () {
 
     expect($trip->fresh())
         ->is_public->toBeTrue()
+        ->visibility->toBe('public')
         ->published_at->not->toBeNull();
 
     expect($variant->fresh())
         ->is_public->toBeTrue()
+        ->visibility->toBe('public')
         ->published_at->not->toBeNull();
+});
+
+test('trip management can set family and private visibility modes', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $trip->publish();
+    $variant->publish();
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage')
+        ->set('selectedTripId', $trip->id)
+        ->set('selectedVariantId', $variant->id)
+        ->call('setTripVisibility', 'family')
+        ->call('setVariantVisibility', $variant->id, 'family')
+        ->assertHasNoErrors()
+        ->assertSee('Family link')
+        ->call('setTripVisibility', 'private')
+        ->call('setVariantVisibility', $variant->id, 'private')
+        ->assertHasNoErrors();
+
+    expect($trip->fresh())
+        ->visibility->toBe('private')
+        ->is_public->toBeFalse()
+        ->published_at->toBeNull();
+
+    expect($variant->fresh())
+        ->visibility->toBe('private')
+        ->is_public->toBeFalse()
+        ->published_at->toBeNull();
 });
 
 test('public day show page requires a published trip and timeline', function () {

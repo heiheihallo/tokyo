@@ -116,7 +116,7 @@ new #[Title('Manage trips')] class extends Component {
             return;
         }
 
-        if ($this->selectedTrip->is_public) {
+        if ($this->selectedTrip->is_public || $this->selectedTrip->visibility === 'public') {
             $this->selectedTrip->unpublish();
 
             Flux::toast(text: __('Trip unpublished.'));
@@ -129,6 +129,17 @@ new #[Title('Manage trips')] class extends Component {
         Flux::toast(variant: 'success', text: __('Trip published.'));
     }
 
+    public function setTripVisibility(string $visibility): void
+    {
+        if (! $this->selectedTrip || ! in_array($visibility, ['private', 'family', 'public'], true)) {
+            return;
+        }
+
+        $this->selectedTrip->setVisibility($visibility);
+
+        Flux::toast(variant: 'success', text: __('Trip visibility updated.'));
+    }
+
     public function toggleVariantPublication(int $variantId): void
     {
         $variant = $this->selectedTrip?->variants()->whereKey($variantId)->first();
@@ -137,7 +148,7 @@ new #[Title('Manage trips')] class extends Component {
             return;
         }
 
-        if ($variant->is_public) {
+        if ($variant->is_public || $variant->visibility === 'public') {
             $variant->unpublish();
 
             Flux::toast(text: __('Timeline unpublished.'));
@@ -148,6 +159,19 @@ new #[Title('Manage trips')] class extends Component {
         $variant->publish();
 
         Flux::toast(variant: 'success', text: __('Timeline published.'));
+    }
+
+    public function setVariantVisibility(int $variantId, string $visibility): void
+    {
+        $variant = $this->selectedTrip?->variants()->whereKey($variantId)->first();
+
+        if (! $variant || ! in_array($visibility, ['private', 'family', 'public'], true)) {
+            return;
+        }
+
+        $variant->setVisibility($visibility);
+
+        Flux::toast(variant: 'success', text: __('Timeline visibility updated.'));
     }
 
     public function selectDay(int $dayId): void
@@ -1335,17 +1359,29 @@ new #[Title('Manage trips')] class extends Component {
                             <div class="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-700">
                                 <div class="flex items-center justify-between gap-3">
                                     <div>
-                                        <div class="font-medium">{{ __('Public trip page') }}</div>
-                                        <div class="text-zinc-500">{{ $this->selectedTrip->is_public ? __('Published') : __('Private') }}</div>
+                                        <div class="font-medium">{{ __('Traveler visibility') }}</div>
+                                        <div class="text-zinc-500">{{ $this->selectedTrip->visibilityLabel() }}</div>
                                     </div>
                                     <flux:button size="sm" wire:click="toggleTripPublication">
-                                        {{ $this->selectedTrip->is_public ? __('Unpublish') : __('Publish') }}
+                                        {{ $this->selectedTrip->visibility === 'public' || $this->selectedTrip->is_public ? __('Unpublish') : __('Publish') }}
                                     </flux:button>
                                 </div>
 
-                                @if ($this->selectedTrip->is_public && $this->publicTripUrl())
+                                <div class="mt-3 grid grid-cols-3 gap-2">
+                                    @foreach (['private' => __('Private'), 'family' => __('Family'), 'public' => __('Public')] as $visibility => $label)
+                                        <flux:button size="xs" :variant="$this->selectedTrip->visibility === $visibility ? 'primary' : 'outline'" wire:click="setTripVisibility('{{ $visibility }}')">
+                                            {{ $label }}
+                                        </flux:button>
+                                    @endforeach
+                                </div>
+
+                                @if (($this->selectedTrip->is_public || $this->selectedTrip->visibility === 'public') && $this->publicTripUrl())
                                     <flux:link class="mt-3 block truncate" :href="$this->publicTripUrl()" target="_blank">
                                         {{ $this->publicTripUrl() }}
+                                    </flux:link>
+                                @elseif ($this->selectedTrip->visibility === 'family' && $this->publicTripUrl())
+                                    <flux:link class="mt-3 block truncate" :href="$this->publicTripUrl()" target="_blank">
+                                        {{ __('Family link') }} · {{ $this->publicTripUrl() }}
                                     </flux:link>
                                 @endif
 
@@ -1364,16 +1400,20 @@ new #[Title('Manage trips')] class extends Component {
                                     <div class="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-700">
                                         <div class="min-w-0">
                                             <div class="truncate font-medium">{{ $variant->name }}</div>
-                                            <div class="text-zinc-500">{{ $variant->is_public ? __('Visible publicly') : __('Hidden publicly') }}</div>
+                                            <div class="text-zinc-500">{{ $variant->visibilityLabel() }}</div>
                                             @if ($this->publicPreviewUrl($variant))
                                                 <flux:link class="mt-1 block truncate text-xs text-amber-700 dark:text-amber-300" :href="$this->publicPreviewUrl($variant)" target="_blank">
                                                     {{ __('Preview') }}
                                                 </flux:link>
                                             @endif
                                         </div>
-                                        <flux:button size="xs" wire:click="toggleVariantPublication({{ $variant->id }})">
-                                            {{ $variant->is_public ? __('Hide') : __('Show') }}
-                                        </flux:button>
+                                        <div class="flex shrink-0 gap-1">
+                                            @foreach (['private' => __('Private'), 'family' => __('Family'), 'public' => __('Public')] as $visibility => $label)
+                                                <flux:button size="xs" :variant="$variant->visibility === $visibility ? 'primary' : 'outline'" wire:click="setVariantVisibility({{ $variant->id }}, '{{ $visibility }}')">
+                                                    {{ $label }}
+                                                </flux:button>
+                                            @endforeach
+                                        </div>
                                     </div>
                                 @endforeach
                             </div>

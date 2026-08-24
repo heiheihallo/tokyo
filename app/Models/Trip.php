@@ -23,7 +23,12 @@ class Trip extends Model
         'arrival_preference',
         'is_public',
         'published_at',
+        'visibility',
         'metadata',
+    ];
+
+    protected $attributes = [
+        'visibility' => 'private',
     ];
 
     protected function casts(): array
@@ -56,7 +61,21 @@ class Trip extends Model
     public function publishedVariants(): HasMany
     {
         return $this->hasMany(TripVariant::class)
-            ->where('is_public', true)
+            ->where(fn ($query) => $query->where('is_public', true)->orWhere('visibility', 'public'))
+            ->orderBy('sort_order');
+    }
+
+    public function visibleVariantsFor(?User $user): HasMany
+    {
+        return $this->hasMany(TripVariant::class)
+            ->where(function ($query) use ($user): void {
+                $query->where('is_public', true)
+                    ->orWhere('visibility', 'public');
+
+                if ($user) {
+                    $query->orWhere('visibility', 'family');
+                }
+            })
             ->orderBy('sort_order');
     }
 
@@ -70,6 +89,7 @@ class Trip extends Model
         $this->forceFill([
             'is_public' => true,
             'published_at' => $this->published_at ?? now(),
+            'visibility' => 'public',
         ])->save();
     }
 
@@ -78,7 +98,39 @@ class Trip extends Model
         $this->forceFill([
             'is_public' => false,
             'published_at' => null,
+            'visibility' => 'private',
         ])->save();
+    }
+
+    public function setVisibility(string $visibility): void
+    {
+        if (! in_array($visibility, ['private', 'family', 'public'], true)) {
+            return;
+        }
+
+        $this->forceFill([
+            'visibility' => $visibility,
+            'is_public' => $visibility === 'public',
+            'published_at' => $visibility === 'public' ? ($this->published_at ?? now()) : null,
+        ])->save();
+    }
+
+    public function isVisibleTo(?User $user): bool
+    {
+        if ($this->is_public || $this->visibility === 'public') {
+            return true;
+        }
+
+        return $this->visibility === 'family' && $user !== null;
+    }
+
+    public function visibilityLabel(): string
+    {
+        return match ($this->visibility) {
+            'public' => 'Public',
+            'family' => 'Family',
+            default => 'Private',
+        };
     }
 
     public function getRouteKeyName(): string

@@ -22,8 +22,8 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
 
     public function mount(Trip $trip, TripVariant $variant, DayNode $dayNode): void
     {
-        abort_unless($trip->is_public || $this->canPreview(), 404);
-        abort_unless($variant->trip_id === $trip->id && ($variant->is_public || $this->canPreview()), 404);
+        abort_unless($this->canPreview() || $trip->isVisibleTo(auth()->user()), 404);
+        abort_unless($variant->trip_id === $trip->id && ($this->canPreview() || $variant->isVisibleTo(auth()->user())), 404);
         abort_unless($dayNode->trip_id === $trip->id && $dayNode->trip_variant_id === $variant->id, 404);
 
         $this->tripId = $trip->id;
@@ -35,14 +35,21 @@ new #[Layout('layouts.public')] #[Title('Day details')] class extends Component 
     public function trip(): Trip
     {
         return Trip::query()
-            ->when(! $this->canPreview(), fn ($query) => $query->where('is_public', true))
+            ->when(! $this->canPreview(), fn ($query) => $query->where(function ($query): void {
+                $query->where('is_public', true)
+                    ->orWhere('visibility', 'public');
+
+                if (auth()->check()) {
+                    $query->orWhere('visibility', 'family');
+                }
+            }))
             ->findOrFail($this->tripId);
     }
 
     #[Computed]
     public function variant(): TripVariant
     {
-        return ($this->canPreview() ? $this->trip->variants() : $this->trip->publishedVariants())
+        return ($this->canPreview() ? $this->trip->variants() : $this->trip->visibleVariantsFor(auth()->user()))
             ->findOrFail($this->variantId);
     }
 

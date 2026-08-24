@@ -15,6 +15,7 @@ class JapanTripReference
             'currency_primary' => 'NOK',
             'currency_secondary' => 'JPY',
             'arrival_preference' => 'HND',
+            'visibility' => 'private',
             'metadata' => [
                 'recommended_window' => '2027-06-24 to 2027-07-27',
                 'source_files' => [
@@ -37,6 +38,7 @@ class JapanTripReference
                 'flight_strategy' => 'OSL > CPH stopover > HND, return HND > CPH > OSL',
                 'description' => 'The 24-day reference itinerary with a low-friction Copenhagen stopover, Tokyo, Hakone, Kyoto, and a Tokyo return buffer.',
                 'is_default' => true,
+                'visibility' => 'private',
                 'sort_order' => 10,
             ],
             [
@@ -47,6 +49,7 @@ class JapanTripReference
                 'flight_strategy' => 'OSL > CPH > HND, return HND > CPH > OSL',
                 'description' => 'Removes the intentional Copenhagen stay and keeps the trip focused on Japan with the same value hotel logic.',
                 'is_default' => false,
+                'visibility' => 'private',
                 'sort_order' => 20,
             ],
             [
@@ -57,6 +60,7 @@ class JapanTripReference
                 'flight_strategy' => 'OSL > AMS/CDG > HND, return KIX > AMS/CDG > OSL',
                 'description' => 'Open-jaw premium comfort concept with Tokyo Station Hotel, Hakone ryokan, Hotel Granvia Kyoto, and no intentional stopover.',
                 'is_default' => false,
+                'visibility' => 'private',
                 'sort_order' => 30,
             ],
             [
@@ -67,6 +71,7 @@ class JapanTripReference
                 'flight_strategy' => 'OSL > CPH/AMS/CDG > HND, Japan > Seoul, ICN > Europe > OSL',
                 'description' => 'A special-trip variant that replaces the final Tokyo return with Osaka/Kansai positioning and a short Seoul stopover.',
                 'is_default' => false,
+                'visibility' => 'private',
                 'sort_order' => 40,
             ],
         ];
