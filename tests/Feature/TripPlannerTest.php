@@ -64,6 +64,25 @@ test('planner filters timeline data by variant and priority', function () {
         ->assertDontSee('Low effort Copenhagen day');
 });
 
+test('planner compares multiple timelines and can open one from comparison', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+
+    Livewire::actingAs($user)
+        ->test('pages::planner.dashboard')
+        ->set('tripSlug', $trip->slug)
+        ->set('view', 'compare')
+        ->assertSee('Timeline comparison')
+        ->assertSee('Value with Copenhagen stopover')
+        ->assertSee('Premium with Seoul stopover')
+        ->assertSee('Hotel changes')
+        ->call('openComparisonVariant', 'premium-seoul-stopover')
+        ->assertSet('variantSlug', 'premium-seoul-stopover')
+        ->assertSet('view', 'timeline');
+});
+
 test('admin timeline does not preselect a day', function () {
     Artisan::call('trip:import-japan-reference');
 
@@ -640,6 +659,52 @@ test('trip management connects selected day workspace and journal quality checks
         ->assertSet('selectedJournalEntryId', $entry->id);
 });
 
+test('trip management day workspace creates quick slots and slot journal drafts', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage')
+        ->set('selectedTripId', $trip->id)
+        ->set('selectedVariantId', $variant->id)
+        ->call('selectDay', $day->id)
+        ->assertSee('Day board')
+        ->call('createQuickDaySlot', 'buffer')
+        ->assertHasNoErrors()
+        ->assertSee('Flexible buffer');
+
+    $slot = $day->itineraryItems()->where('title', 'Flexible buffer')->firstOrFail();
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage')
+        ->set('selectedTripId', $trip->id)
+        ->set('selectedVariantId', $variant->id)
+        ->call('selectDay', $day->id)
+        ->call('startJournalForSelectedSlot', $slot->id)
+        ->assertSet('journalForm.title', 'Flexible buffer update')
+        ->assertSet('journalForm.day_itinerary_item_id', (string) $slot->id)
+        ->set('journalForm.body', 'Family-safe slot update.')
+        ->call('createJournalEntry')
+        ->call('publishJournalEntryAs', 'family')
+        ->assertHasNoErrors();
+
+    $entry = JournalEntry::query()->where('title', 'Flexible buffer update')->firstOrFail();
+
+    expect($slot->fresh())
+        ->item_type->toBe('buffer')
+        ->time_label->toBe('flex')
+        ->is_public->toBeTrue();
+
+    expect($entry)
+        ->day_itinerary_item_id->toBe($slot->id)
+        ->visibility->toBe('family')
+        ->published_at->not->toBeNull();
+});
+
 test('public day show page requires a published trip and timeline', function () {
     Artisan::call('trip:import-japan-reference');
 
@@ -958,9 +1023,19 @@ test('trip management can search and edit shared assets', function () {
         ->set('assetEditForm.reservation_url', 'https://hotel.example.test/reservation')
         ->set('assetEditForm.latitude', '35.6984000')
         ->set('assetEditForm.longitude', '139.7730000')
+        ->set('assetEditForm.price_min_nok', 1200)
+        ->set('assetEditForm.price_max_nok', 1900)
+        ->set('assetEditForm.price_basis', 'per night')
+        ->set('assetEditForm.price_notes', 'Watch weekend rates.')
         ->set('assetEditForm.notes', 'Use as the low-friction arrival base.')
         ->call('updateAsset')
+        ->set('assetQualityFilter', 'priced')
+        ->assertSee('JR East Hotel Mets Premier Akihabara')
+        ->set('assetUsageFilter', 'used')
+        ->assertSee('Admin asset usage anchor')
         ->set('assetTab', 'transport')
+        ->set('assetQualityFilter', 'all')
+        ->set('assetUsageFilter', 'all')
         ->set('assetSearch', 'Toyosu test')
         ->assertSee('Akihabara to Toyosu test hop')
         ->call('selectAsset', $transport->id)
@@ -977,6 +1052,10 @@ test('trip management can search and edit shared assets', function () {
         ->reservation_url->toBe('https://hotel.example.test/reservation')
         ->latitude->toBe('35.6984000')
         ->longitude->toBe('139.7730000')
+        ->price_min_nok->toBe(1200)
+        ->price_max_nok->toBe(1900)
+        ->price_basis->toBe('per night')
+        ->price_notes->toBe('Watch weekend rates.')
         ->notes->toBe('Use as the low-friction arrival base.');
 
     expect($transport->fresh())

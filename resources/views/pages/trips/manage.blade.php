@@ -32,6 +32,8 @@ new #[Title('Manage trips')] class extends Component {
     public ?int $selectedAssetId = null;
     public string $assetTab = 'accommodations';
     public string $assetSearch = '';
+    public string $assetQualityFilter = 'all';
+    public string $assetUsageFilter = 'all';
     public string $planningSeverityFilter = 'all';
     public string $planningCategoryFilter = 'all';
 
@@ -606,6 +608,53 @@ new #[Title('Manage trips')] class extends Component {
         Flux::toast(variant: 'success', text: __('Task added.'));
     }
 
+    public function createQuickDaySlot(string $type): void
+    {
+        $day = $this->selectedDay;
+
+        if (! $day || ! in_array($type, ['stay', 'move', 'activity', 'food', 'buffer'], true)) {
+            return;
+        }
+
+        $subject = match ($type) {
+            'stay' => $day->accommodations->first(),
+            'move' => $day->transportLegs->first(),
+            'food' => $day->foodSpots->first(),
+            'activity' => $day->activities->first(),
+            default => null,
+        };
+
+        $title = match ($type) {
+            'stay' => $subject ? __('Stay at :name', ['name' => $this->assetLabel($subject)]) : __('Hotel stay'),
+            'move' => $subject ? $this->assetLabel($subject) : __('Movement anchor'),
+            'food' => $subject ? $this->assetLabel($subject) : __('Food anchor'),
+            'buffer' => __('Flexible buffer'),
+            default => $subject ? $this->assetLabel($subject) : __('Activity anchor'),
+        };
+
+        $day->itineraryItems()->create([
+            'trip_id' => $day->trip_id,
+            'trip_variant_id' => $day->trip_variant_id,
+            'stable_key' => 'quick-slot-'.Str::lower(Str::random(10)),
+            'item_type' => $type,
+            'time_label' => $this->quickSlotTimeLabel($type),
+            'title' => $title,
+            'location_label' => $subject instanceof Model ? $this->assetLocationLabelForModel($subject) : $day->location,
+            'subject_type' => $subject instanceof Model ? $subject::class : null,
+            'subject_id' => $subject instanceof Model ? $subject->id : null,
+            'latitude' => $subject instanceof TransportLeg ? null : ($subject->latitude ?? null),
+            'longitude' => $subject instanceof TransportLeg ? null : ($subject->longitude ?? null),
+            'summary' => __('Fill in the traveler-facing note when the timing is clearer.'),
+            'is_public' => true,
+            'sort_order' => ($day->itineraryItems()->max('sort_order') ?? 0) + 10,
+            'details' => [],
+        ]);
+
+        unset($this->selectedDay, $this->planningIssues, $this->planningIssueCounts, $this->planningCategoryOptions);
+
+        Flux::toast(variant: 'success', text: __('Quick slot added.'));
+    }
+
     public function createJournalEntry(): void
     {
         if (! $this->selectedTrip) {
@@ -830,6 +879,45 @@ new #[Title('Manage trips')] class extends Component {
         unset($this->journalSlotOptions);
     }
 
+    public function startJournalForSelectedSlot(int $slotId): void
+    {
+        $slot = $this->selectedDay?->itineraryItems->firstWhere('id', $slotId);
+
+        if (! $slot) {
+            return;
+        }
+
+        $this->selectedSlotId = $slot->id;
+        $this->resetJournalForm();
+        $this->journalForm['title'] = __(':title update', ['title' => $slot->title]);
+        $this->journalForm['excerpt'] = $slot->summary ?? '';
+        $this->journalForm['location_label'] = $slot->location_label ?? $this->selectedDay?->location ?? '';
+        $this->journalForm['trip_variant_id'] = (string) $slot->trip_variant_id;
+        $this->journalForm['day_node_id'] = (string) $slot->day_node_id;
+        $this->journalForm['day_itinerary_item_id'] = (string) $slot->id;
+        unset($this->journalSlotOptions);
+    }
+
+    public function publishJournalEntryAs(string $visibility): void
+    {
+        if (! in_array($visibility, ['family', 'public'], true)) {
+            return;
+        }
+
+        $entry = $this->selectedJournalEntry;
+
+        if (! $entry) {
+            return;
+        }
+
+        $entry->publish($visibility);
+
+        unset($this->journalEntries, $this->selectedJournalEntry);
+        $this->selectJournalEntry($entry->id);
+
+        Flux::toast(variant: 'success', text: __('Journal entry published.'));
+    }
+
     public function toggleTaskStatus(int $taskId): void
     {
         $task = $this->selectedDay?->tasks()->whereKey($taskId)->first();
@@ -1030,6 +1118,30 @@ new #[Title('Manage trips')] class extends Component {
     }
 
     #[Computed]
+    public function selectedDayBoardSummary(): array
+    {
+        $day = $this->selectedDay;
+
+        if (! $day) {
+            return [
+                'stays' => 0,
+                'moves' => 0,
+                'activities' => 0,
+                'food' => 0,
+                'private_slots' => 0,
+            ];
+        }
+
+        return [
+            'stays' => $day->itineraryItems->where('item_type', 'stay')->count(),
+            'moves' => $day->itineraryItems->where('item_type', 'move')->count(),
+            'activities' => $day->itineraryItems->where('item_type', 'activity')->count(),
+            'food' => $day->itineraryItems->where('item_type', 'food')->count(),
+            'private_slots' => $day->itineraryItems->where('is_public', false)->count(),
+        ];
+    }
+
+    #[Computed]
     public function selectedAsset(): ?Model
     {
         return $this->selectedAssetId ? $this->assetModel()::query()->find($this->selectedAssetId) : null;
@@ -1057,7 +1169,24 @@ new #[Title('Manage trips')] class extends Component {
             ->groupBy('subject_id')
             ->pluck('aggregate', 'subject_id');
 
-        return $assets->each(fn (Model $asset) => $asset->setAttribute('usage_count', (int) ($usageCounts[$asset->id] ?? 0)));
+        return $assets
+            ->each(fn (Model $asset) => $asset->setAttribute('usage_count', (int) ($usageCounts[$asset->id] ?? 0)))
+            ->filter(fn (Model $asset): bool => $this->assetMatchesUsageFilter($asset))
+            ->filter(fn (Model $asset): bool => $this->assetMatchesQualityFilter($asset))
+            ->values();
+    }
+
+    #[Computed]
+    public function assetLibrarySummary(): array
+    {
+        $assets = $this->assets;
+
+        return [
+            'shown' => $assets->count(),
+            'used' => $assets->filter(fn (Model $asset): bool => (int) $asset->usage_count > 0)->count(),
+            'needs_cleanup' => $assets->filter(fn (Model $asset): bool => $this->assetQualityFlags($asset) !== [])->count(),
+            'mapped' => $assets->filter(fn (Model $asset): bool => $asset instanceof TransportLeg || ($asset->latitude !== null && $asset->longitude !== null))->count(),
+        ];
     }
 
     #[Computed]
@@ -1164,6 +1293,18 @@ new #[Title('Manage trips')] class extends Component {
             'timeline' => $this->selectedVariant?->slug,
             'day' => $this->selectedDay?->stable_key,
             'preview' => 1,
+        ], fn ($value) => $value !== null));
+    }
+
+    public function publicGuestPreviewUrl(?TripVariant $variant = null): ?string
+    {
+        if (! $this->selectedTrip) {
+            return null;
+        }
+
+        return route('trips.public', array_filter([
+            'trip' => $this->selectedTrip,
+            'timeline' => $variant?->slug ?? $this->selectedVariant?->slug,
         ], fn ($value) => $value !== null));
     }
 
@@ -1302,10 +1443,10 @@ new #[Title('Manage trips')] class extends Component {
     private function assetEditableFields(): array
     {
         return match ($this->assetTab) {
-            'activities' => ['name', 'area', 'city', 'country', 'rain_fit', 'age_fit', 'prebooking_status', 'reservation_url', 'latitude', 'longitude', 'notes'],
-            'food' => ['name', 'area', 'city', 'country', 'default_meal_type', 'fallback_type', 'latitude', 'longitude', 'notes'],
-            'transport' => ['route_label', 'mode', 'operator', 'origin', 'destination', 'duration_label', 'reservation_url', 'notes'],
-            default => ['name', 'neighborhood', 'city', 'country', 'breakfast_note', 'dinner_note', 'reservation_url', 'latitude', 'longitude', 'notes'],
+            'activities' => ['name', 'area', 'city', 'country', 'rain_fit', 'age_fit', 'prebooking_status', 'reservation_url', 'latitude', 'longitude', 'price_min_nok', 'price_max_nok', 'price_min_jpy', 'price_max_jpy', 'price_basis', 'price_notes', 'notes'],
+            'food' => ['name', 'area', 'city', 'country', 'default_meal_type', 'fallback_type', 'latitude', 'longitude', 'price_min_nok', 'price_max_nok', 'price_min_jpy', 'price_max_jpy', 'price_basis', 'price_notes', 'notes'],
+            'transport' => ['route_label', 'mode', 'operator', 'origin', 'destination', 'duration_label', 'reservation_url', 'price_min_nok', 'price_max_nok', 'price_min_jpy', 'price_max_jpy', 'price_basis', 'price_notes', 'notes'],
+            default => ['name', 'neighborhood', 'city', 'country', 'breakfast_note', 'dinner_note', 'reservation_url', 'latitude', 'longitude', 'price_min_nok', 'price_max_nok', 'price_min_jpy', 'price_max_jpy', 'price_basis', 'price_notes', 'notes'],
         };
     }
 
@@ -1318,13 +1459,33 @@ new #[Title('Manage trips')] class extends Component {
                 'name', 'route_label' => ['required', 'string', 'max:255'],
                 'latitude' => ['nullable', 'numeric', 'between:-90,90'],
                 'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+                'price_min_nok', 'price_max_nok', 'price_min_jpy', 'price_max_jpy' => ['nullable', 'integer', 'min:0'],
                 'reservation_url' => ['nullable', 'url', 'max:2048'],
-                'notes', 'breakfast_note', 'dinner_note' => ['nullable', 'string', 'max:4000'],
+                'notes', 'breakfast_note', 'dinner_note', 'price_notes' => ['nullable', 'string', 'max:4000'],
                 default => ['nullable', 'string', 'max:255'],
             };
         }
 
         return $rules;
+    }
+
+    private function assetMatchesUsageFilter(Model $asset): bool
+    {
+        return match ($this->assetUsageFilter) {
+            'used' => (int) $asset->usage_count > 0,
+            'unused' => (int) $asset->usage_count === 0,
+            default => true,
+        };
+    }
+
+    private function assetMatchesQualityFilter(Model $asset): bool
+    {
+        return match ($this->assetQualityFilter) {
+            'needs_cleanup' => $this->assetQualityFlags($asset) !== [],
+            'mapped' => $asset instanceof TransportLeg || ($asset->latitude !== null && $asset->longitude !== null),
+            'priced' => $asset->price_min_nok !== null || $asset->price_min_jpy !== null,
+            default => true,
+        };
     }
 
     private function allPlanningIssues(): \Illuminate\Support\Collection
@@ -1752,6 +1913,27 @@ new #[Title('Manage trips')] class extends Component {
         return $location !== '' ? $location : null;
     }
 
+    private function assetLocationLabelForModel(Model $asset): ?string
+    {
+        return match (true) {
+            $asset instanceof TransportLeg => collect([$asset->origin, $asset->destination])->filter()->join(' to ') ?: null,
+            $asset instanceof Accommodation => collect([$asset->neighborhood, $asset->city])->filter()->join(', ') ?: null,
+            $asset instanceof Activity, $asset instanceof FoodSpot => collect([$asset->area ?? null, $asset->city ?? null])->filter()->join(', ') ?: null,
+            default => null,
+        };
+    }
+
+    private function quickSlotTimeLabel(string $type): string
+    {
+        return match ($type) {
+            'stay' => 'overnight',
+            'move' => 'move window',
+            'food' => 'meal window',
+            'buffer' => 'flex',
+            default => 'activity window',
+        };
+    }
+
     private function parseSubjectRef(?string $subjectRef): array
     {
         if (! $subjectRef) {
@@ -1945,6 +2127,12 @@ new #[Title('Manage trips')] class extends Component {
                                 @if ($this->publicPreviewUrl())
                                     <flux:link class="mt-2 block truncate text-amber-700 dark:text-amber-300" :href="$this->publicPreviewUrl()" target="_blank">
                                         {{ __('Preview current timeline') }}
+                                    </flux:link>
+                                @endif
+
+                                @if ($this->publicGuestPreviewUrl())
+                                    <flux:link class="mt-2 block truncate text-xs" :href="$this->publicGuestPreviewUrl()" target="_blank">
+                                        {{ __('Preview guest launch view') }}
                                     </flux:link>
                                 @endif
                             </div>
@@ -2270,6 +2458,12 @@ new #[Title('Manage trips')] class extends Component {
                                             <flux:button type="button" wire:click="publishJournalEntry" icon="paper-airplane">
                                                 {{ __('Publish') }}
                                             </flux:button>
+                                            <flux:button type="button" wire:click="publishJournalEntryAs('family')">
+                                                {{ __('Family publish') }}
+                                            </flux:button>
+                                            <flux:button type="button" wire:click="publishJournalEntryAs('public')">
+                                                {{ __('Public publish') }}
+                                            </flux:button>
                                         @endif
                                     @endif
                                 </div>
@@ -2439,6 +2633,63 @@ new #[Title('Manage trips')] class extends Component {
                             </div>
                         </div>
 
+                        <div class="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                            <section class="rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                                <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Day board') }}</div>
+                                <div class="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
+                                    <div class="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800">
+                                        <div class="text-zinc-500">{{ __('Stay') }}</div>
+                                        <div class="mt-1 font-semibold text-zinc-950 dark:text-white">{{ $this->selectedDayBoardSummary['stays'] }}</div>
+                                    </div>
+                                    <div class="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800">
+                                        <div class="text-zinc-500">{{ __('Move') }}</div>
+                                        <div class="mt-1 font-semibold text-zinc-950 dark:text-white">{{ $this->selectedDayBoardSummary['moves'] }}</div>
+                                    </div>
+                                    <div class="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800">
+                                        <div class="text-zinc-500">{{ __('Do') }}</div>
+                                        <div class="mt-1 font-semibold text-zinc-950 dark:text-white">{{ $this->selectedDayBoardSummary['activities'] }}</div>
+                                    </div>
+                                    <div class="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800">
+                                        <div class="text-zinc-500">{{ __('Eat') }}</div>
+                                        <div class="mt-1 font-semibold text-zinc-950 dark:text-white">{{ $this->selectedDayBoardSummary['food'] }}</div>
+                                    </div>
+                                    <div class="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800">
+                                        <div class="text-zinc-500">{{ __('Private') }}</div>
+                                        <div class="mt-1 font-semibold text-zinc-950 dark:text-white">{{ $this->selectedDayBoardSummary['private_slots'] }}</div>
+                                    </div>
+                                </div>
+
+                                <div class="mt-4 flex flex-wrap gap-2">
+                                    <flux:button size="xs" icon="building-office-2" wire:click="createQuickDaySlot('stay')">{{ __('Stay slot') }}</flux:button>
+                                    <flux:button size="xs" icon="paper-airplane" wire:click="createQuickDaySlot('move')">{{ __('Move slot') }}</flux:button>
+                                    <flux:button size="xs" icon="sparkles" wire:click="createQuickDaySlot('activity')">{{ __('Activity slot') }}</flux:button>
+                                    <flux:button size="xs" icon="map-pin" wire:click="createQuickDaySlot('food')">{{ __('Food slot') }}</flux:button>
+                                    <flux:button size="xs" icon="clock" wire:click="createQuickDaySlot('buffer')">{{ __('Buffer') }}</flux:button>
+                                </div>
+                            </section>
+
+                            <section class="rounded-lg border border-zinc-200 p-4 text-sm dark:border-zinc-700">
+                                <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Traveler previews') }}</div>
+                                <div class="mt-3 space-y-2">
+                                    @if ($this->publicSelectedDayUrl())
+                                        <flux:button class="w-full justify-start" size="sm" icon="arrow-top-right-on-square" :href="$this->publicSelectedDayUrl()" target="_blank">
+                                            {{ __('Preview as admin') }}
+                                        </flux:button>
+                                    @endif
+                                    @if ($this->publicGuestPreviewUrl())
+                                        <flux:button class="w-full justify-start" size="sm" icon="eye" :href="$this->publicGuestPreviewUrl()" target="_blank">
+                                            {{ __('Preview as guest') }}
+                                        </flux:button>
+                                    @endif
+                                    @if ($this->selectedTrip?->travelerAccessMode() === 'authenticated')
+                                        <div class="rounded-lg bg-amber-50 p-3 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                                            {{ __('Planning-login views require a signed-in account; public launch is still private to guests.') }}
+                                        </div>
+                                    @endif
+                                </div>
+                            </section>
+                        </div>
+
                         <div class="mt-5 grid gap-4 lg:grid-cols-2">
                             <section>
                                 <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Journal coverage') }}</div>
@@ -2533,6 +2784,9 @@ new #[Title('Manage trips')] class extends Component {
                                                 </flux:button>
                                                 <flux:button size="xs" wire:click="toggleSlotPublication({{ $slot->id }})">
                                                     {{ $slot->is_public ? __('Make private') : __('Make public') }}
+                                                </flux:button>
+                                                <flux:button size="xs" icon="newspaper" wire:click="startJournalForSelectedSlot({{ $slot->id }})">
+                                                    {{ __('Journal') }}
                                                 </flux:button>
                                                 <flux:button size="xs" icon="pencil-square" wire:click="selectSlot({{ $slot->id }})">
                                                     {{ __('Edit') }}
@@ -2703,9 +2957,41 @@ new #[Title('Manage trips')] class extends Component {
                         </div>
                     </form>
 
+                    <div class="mt-5 grid gap-3 md:grid-cols-4">
+                        <div class="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-700">
+                            <div class="text-zinc-500">{{ __('Shown') }}</div>
+                            <div class="mt-1 text-lg font-semibold text-zinc-950 dark:text-white">{{ $this->assetLibrarySummary['shown'] }}</div>
+                        </div>
+                        <div class="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-700">
+                            <div class="text-zinc-500">{{ __('Used') }}</div>
+                            <div class="mt-1 text-lg font-semibold text-zinc-950 dark:text-white">{{ $this->assetLibrarySummary['used'] }}</div>
+                        </div>
+                        <div class="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-700">
+                            <div class="text-zinc-500">{{ __('Needs cleanup') }}</div>
+                            <div class="mt-1 text-lg font-semibold {{ $this->assetLibrarySummary['needs_cleanup'] > 0 ? 'text-amber-600' : 'text-zinc-950 dark:text-white' }}">{{ $this->assetLibrarySummary['needs_cleanup'] }}</div>
+                        </div>
+                        <div class="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-700">
+                            <div class="text-zinc-500">{{ __('Map ready') }}</div>
+                            <div class="mt-1 text-lg font-semibold text-zinc-950 dark:text-white">{{ $this->assetLibrarySummary['mapped'] }}</div>
+                        </div>
+                    </div>
+
                     <div class="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
                         <div>
-                            <flux:input wire:model.live.debounce.300ms="assetSearch" icon="magnifying-glass" :label="__('Search shared assets')" placeholder="{{ __('Name, area, city, route, notes') }}" />
+                            <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_180px]">
+                                <flux:input wire:model.live.debounce.300ms="assetSearch" icon="magnifying-glass" :label="__('Search shared assets')" placeholder="{{ __('Name, area, city, route, notes') }}" />
+                                <flux:select wire:model.live="assetUsageFilter" :label="__('Usage')">
+                                    <flux:select.option value="all">{{ __('All usage') }}</flux:select.option>
+                                    <flux:select.option value="used">{{ __('Used') }}</flux:select.option>
+                                    <flux:select.option value="unused">{{ __('Unused') }}</flux:select.option>
+                                </flux:select>
+                                <flux:select wire:model.live="assetQualityFilter" :label="__('Quality')">
+                                    <flux:select.option value="all">{{ __('All quality') }}</flux:select.option>
+                                    <flux:select.option value="needs_cleanup">{{ __('Needs cleanup') }}</flux:select.option>
+                                    <flux:select.option value="mapped">{{ __('Mapped') }}</flux:select.option>
+                                    <flux:select.option value="priced">{{ __('Priced') }}</flux:select.option>
+                                </flux:select>
+                            </div>
 
                             <flux:table class="mt-4">
                                 <flux:table.columns>
@@ -2803,6 +3089,14 @@ new #[Title('Manage trips')] class extends Component {
                                         </div>
                                     @endif
 
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <flux:input wire:model="assetEditForm.price_min_nok" :label="__('Min NOK')" type="number" />
+                                        <flux:input wire:model="assetEditForm.price_max_nok" :label="__('Max NOK')" type="number" />
+                                        <flux:input wire:model="assetEditForm.price_min_jpy" :label="__('Min JPY')" type="number" />
+                                        <flux:input wire:model="assetEditForm.price_max_jpy" :label="__('Max JPY')" type="number" />
+                                    </div>
+                                    <flux:input wire:model="assetEditForm.price_basis" :label="__('Price basis')" placeholder="per night, per person, estimate" />
+                                    <flux:textarea wire:model="assetEditForm.price_notes" :label="__('Price notes')" rows="2" />
                                     <flux:textarea wire:model="assetEditForm.notes" :label="__('Notes')" rows="4" />
                                     <flux:button type="submit" variant="primary" icon="check">{{ __('Save asset') }}</flux:button>
                                 </form>
