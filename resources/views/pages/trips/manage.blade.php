@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
@@ -31,6 +32,7 @@ new #[Title('Manage trips')] class extends Component {
     public ?int $selectedDayId = null;
     public ?int $selectedSlotId = null;
     public ?int $selectedAssetId = null;
+    public string $activeManageTab = 'timeline';
     public string $assetTab = 'accommodations';
     public string $assetSearch = '';
     public string $assetQualityFilter = 'all';
@@ -72,6 +74,20 @@ new #[Title('Manage trips')] class extends Component {
         $this->selectedTripId = $trip?->id;
         $this->selectedVariantId = $trip?->defaultVariant()?->id;
         $this->selectedDayId = $trip?->defaultVariant()?->dayNodes()->orderBy('day_number')->value('id');
+        $this->loadDayForm();
+    }
+
+    #[On('trip-management-selection-changed')]
+    public function selectTripContext(?int $tripId = null, ?int $variantId = null): void
+    {
+        $this->selectedTripId = $tripId;
+        $this->selectedVariantId = $variantId ?: $this->selectedTrip?->defaultVariant()?->id;
+        $this->selectedDayId = $this->selectedVariant?->dayNodes()->orderBy('day_number')->value('id');
+        $this->selectedSlotId = null;
+        $this->selectedAssetId = null;
+        $this->slotEditForm = [];
+        $this->assetEditForm = [];
+        $this->resetJournalForm();
         $this->loadDayForm();
     }
 
@@ -942,12 +958,14 @@ new #[Title('Manage trips')] class extends Component {
         if ($issue['target_type'] === 'slot') {
             $this->selectDay($issue['day_id']);
             $this->selectSlot($issue['slot_id']);
+            $this->activeManageTab = 'timeline';
 
             return;
         }
 
         if ($issue['target_type'] === 'day') {
             $this->selectDay($issue['day_id']);
+            $this->activeManageTab = 'timeline';
 
             return;
         }
@@ -955,10 +973,12 @@ new #[Title('Manage trips')] class extends Component {
         if ($issue['target_type'] === 'asset') {
             $this->assetTab = $issue['asset_tab'];
             $this->selectAsset($issue['asset_id']);
+            $this->activeManageTab = 'assets';
         }
 
         if ($issue['target_type'] === 'journal') {
             $this->selectJournalEntry($issue['journal_entry_id']);
+            $this->activeManageTab = 'journal';
         }
     }
 
@@ -2082,221 +2102,62 @@ new #[Title('Manage trips')] class extends Component {
 
         <div class="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
             <div class="space-y-6">
-                <flux:card>
-                    <div class="flex items-start justify-between gap-3">
-                        <flux:heading>{{ __('Trip switcher') }}</flux:heading>
-                        <div class="flex gap-2">
-                            <flux:modal.trigger name="create-trip">
-                                <flux:button size="sm" icon="plus">{{ __('Trip') }}</flux:button>
-                            </flux:modal.trigger>
-                            <flux:modal.trigger name="create-timeline">
-                                <flux:button size="sm" icon="plus" :disabled="! $this->selectedTrip">{{ __('Timeline') }}</flux:button>
-                            </flux:modal.trigger>
-                        </div>
-                    </div>
-                    <div class="mt-4 space-y-4">
-                        <flux:select wire:model.live="selectedTripId" :label="__('Trip')">
-                            <flux:select.option value="">{{ __('Select trip') }}</flux:select.option>
-                            @foreach ($this->trips as $trip)
-                                <flux:select.option value="{{ $trip->id }}">{{ $trip->name }}</flux:select.option>
-                            @endforeach
-                        </flux:select>
+                <livewire:pages::trips.manage.trip-index
+                    :selected-trip-id="$selectedTripId"
+                    :selected-variant-id="$selectedVariantId"
+                />
 
-                        <flux:select wire:model.live="selectedVariantId" :label="__('Timeline')">
-                            <flux:select.option value="">{{ __('Select timeline') }}</flux:select.option>
-                            @foreach ($this->variants as $variant)
-                                <flux:select.option value="{{ $variant->id }}">{{ $variant->name }}</flux:select.option>
-                            @endforeach
-                        </flux:select>
-
-                        @if ($this->selectedTrip)
-                            <div class="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-700">
-                                <div class="flex items-center justify-between gap-3">
-                                    <div>
-                                        <div class="font-medium">{{ __('Frontend access') }}</div>
-                                        <div class="text-zinc-500">{{ $this->selectedTrip->travelerAccessLabel() }}</div>
-                                    </div>
-                                    <flux:button size="sm" wire:click="toggleTripPublication">
-                                        {{ $this->selectedTrip->visibility === 'public' || $this->selectedTrip->is_public ? __('Unpublish') : __('Publish') }}
-                                    </flux:button>
-                                </div>
-
-                                <div class="mt-3 grid grid-cols-3 gap-2">
-                                    @foreach (['private' => __('Private'), 'authenticated' => __('Planning login'), 'public' => __('Public launch')] as $access => $label)
-                                        <flux:button size="xs" :variant="$this->selectedTrip->travelerAccessMode() === $access ? 'primary' : 'outline'" wire:click="setTripFrontendAccess('{{ $access }}')">
-                                            {{ $label }}
-                                        </flux:button>
-                                    @endforeach
-                                </div>
-
-                                @if ($this->selectedTrip->travelerAccessMode() === 'public' && $this->publicTripUrl())
-                                    <flux:link class="mt-3 block truncate" :href="$this->publicTripUrl()" target="_blank">
-                                        {{ $this->publicTripUrl() }}
-                                    </flux:link>
-                                @elseif ($this->selectedTrip->travelerAccessMode() === 'authenticated' && $this->publicTripUrl())
-                                    <flux:link class="mt-3 block truncate" :href="$this->publicTripUrl()" target="_blank">
-                                        {{ __('Planning login link') }} · {{ $this->publicTripUrl() }}
-                                    </flux:link>
-                                @endif
-
-                                @if ($this->publicPreviewUrl())
-                                    <flux:link class="mt-2 block truncate text-amber-700 dark:text-amber-300" :href="$this->publicPreviewUrl()" target="_blank">
-                                        {{ __('Preview current timeline') }}
-                                    </flux:link>
-                                @endif
-
-                                @if ($this->publicGuestPreviewUrl())
-                                    <flux:link class="mt-2 block truncate text-xs" :href="$this->publicGuestPreviewUrl()" target="_blank">
-                                        {{ __('Preview guest launch view') }}
-                                    </flux:link>
-                                @endif
-                            </div>
-                        @endif
-
-                        @if ($this->variants->isNotEmpty())
-                            <div class="space-y-2">
-                                <div class="text-sm font-medium">{{ __('Published timelines') }}</div>
-                                @foreach ($this->variants as $variant)
-                                    <div class="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-700">
-                                        <div class="min-w-0">
-                                            <div class="truncate font-medium">{{ $variant->name }}</div>
-                                            <div class="text-zinc-500">{{ $variant->travelerAccessLabel() }}</div>
-                                            @if ($this->publicPreviewUrl($variant))
-                                                <flux:link class="mt-1 block truncate text-xs text-amber-700 dark:text-amber-300" :href="$this->publicPreviewUrl($variant)" target="_blank">
-                                                    {{ __('Preview') }}
-                                                </flux:link>
-                                            @endif
-                                        </div>
-                                        <div class="flex shrink-0 gap-1">
-                                            @foreach (['private' => __('Private'), 'authenticated' => __('Login'), 'public' => __('Public')] as $access => $label)
-                                                <flux:button size="xs" :variant="$variant->travelerAccessMode() === $access ? 'primary' : 'outline'" wire:click="setVariantFrontendAccess({{ $variant->id }}, '{{ $access }}')">
-                                                    {{ $label }}
-                                                </flux:button>
-                                            @endforeach
-                                        </div>
-                                    </div>
-                                @endforeach
-                            </div>
-                        @endif
-                    </div>
-                </flux:card>
-
-                <flux:modal name="create-trip" class="md:w-[32rem]">
-                    <form wire:submit="createTrip" class="space-y-5">
-                        <div>
-                            <flux:heading size="lg">{{ __('New trip') }}</flux:heading>
-                            <flux:text class="mt-2">{{ __('Create a separate planning workspace with its own timelines.') }}</flux:text>
-                        </div>
-
-                        <flux:input wire:model="tripForm.name" :label="__('Name')" />
-                        <flux:textarea wire:model="tripForm.summary" :label="__('Summary')" rows="3" />
-                        <div class="grid grid-cols-2 gap-3">
-                            <flux:input wire:model="tripForm.starts_on" :label="__('Starts')" type="date" />
-                            <flux:input wire:model="tripForm.ends_on" :label="__('Ends')" type="date" />
-                        </div>
-                        <flux:input wire:model="tripForm.arrival_preference" :label="__('Arrival preference')" />
-
-                        <div class="flex justify-end gap-2">
-                            <flux:modal.close>
-                                <flux:button type="button">{{ __('Cancel') }}</flux:button>
-                            </flux:modal.close>
-                            <flux:button type="submit" variant="primary" icon="plus">{{ __('Create trip') }}</flux:button>
-                        </div>
-                    </form>
-                </flux:modal>
-
-                <flux:modal name="create-timeline" class="md:w-[32rem]">
-                    <form wire:submit="createVariant" class="space-y-5">
-                        <div>
-                            <flux:heading size="lg">{{ __('New timeline') }}</flux:heading>
-                            <flux:text class="mt-2">{{ __('Add another route option inside the selected trip.') }}</flux:text>
-                        </div>
-
-                        <flux:input wire:model="variantForm.name" :label="__('Name')" />
-                        <flux:select wire:model="variantForm.budget_scenario" :label="__('Budget')">
-                            <flux:select.option value="value">{{ __('Value') }}</flux:select.option>
-                            <flux:select.option value="premium">{{ __('Premium') }}</flux:select.option>
-                        </flux:select>
-                        <flux:input wire:model="variantForm.stopover_type" :label="__('Stopover')" />
-                        <flux:textarea wire:model="variantForm.flight_strategy" :label="__('Flight strategy')" rows="3" />
-
-                        <div class="flex justify-end gap-2">
-                            <flux:modal.close>
-                                <flux:button type="button">{{ __('Cancel') }}</flux:button>
-                            </flux:modal.close>
-                            <flux:button type="submit" variant="primary" icon="plus">{{ __('Create timeline') }}</flux:button>
-                        </div>
-                    </form>
-                </flux:modal>
-
-                <flux:card>
-                    <div class="flex items-start justify-between gap-3">
-                        <div>
-                            <flux:heading>{{ __('EuroBonus plan') }}</flux:heading>
-                            <flux:text>{{ __('Private points, voucher, and bonus grab tracking for premium flight decisions.') }}</flux:text>
-                        </div>
-                        <flux:badge size="sm">{{ __('Private') }}</flux:badge>
-                    </div>
-
-                    @if ($this->loyaltySnapshot)
-                        @php
-                            $projectedPoints = $this->loyaltySnapshot->current_points + $this->loyaltySnapshot->signup_bonus_points + $this->loyaltySnapshot->projected_card_points;
-                            $projectedLevelPoints = $this->loyaltySnapshot->current_level_points + $this->loyaltySnapshot->expected_trip_level_points + $this->loyaltySnapshot->projected_card_level_points;
-                            $levelGap = max(0, $this->loyaltySnapshot->target_level_points - $projectedLevelPoints);
-                            $voucherCount = $this->loyaltySnapshot->vouchers->whereIn('status', ['earned', 'expected'])->sum('quantity');
-                        @endphp
-
-                        <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
-                            <div class="rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
-                                <div class="text-zinc-500">{{ __('Projected points') }}</div>
-                                <div class="mt-1 text-lg font-semibold">{{ number_format($projectedPoints, 0, ',', ' ') }}</div>
-                            </div>
-                            <div class="rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
-                                <div class="text-zinc-500">{{ __('Level gap') }}</div>
-                                <div class="mt-1 text-lg font-semibold">{{ number_format($levelGap, 0, ',', ' ') }}</div>
-                            </div>
-                            <div class="rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
-                                <div class="text-zinc-500">{{ __('2-for-1 vouchers') }}</div>
-                                <div class="mt-1 text-lg font-semibold">{{ $voucherCount }}</div>
-                            </div>
-                            <div class="rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
-                                <div class="text-zinc-500">{{ __('Qualification ends') }}</div>
-                                <div class="mt-1 text-lg font-semibold">{{ $this->loyaltySnapshot->qualification_ends_on?->format('d.m.Y') ?? __('TBD') }}</div>
-                            </div>
-                        </div>
-
-                        @if ($this->loyaltySnapshot->bonusGrabTrips->isNotEmpty())
-                            <div class="mt-4 space-y-2">
-                                <div class="text-sm font-medium">{{ __('Bonus grab candidates') }}</div>
-                                @foreach ($this->loyaltySnapshot->bonusGrabTrips as $bonusGrabTrip)
-                                    <div class="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-700">
-                                        <div class="flex items-start justify-between gap-3">
-                                            <div class="min-w-0">
-                                                <div class="truncate font-medium">{{ $bonusGrabTrip->title }}</div>
-                                                <div class="text-zinc-500">{{ $bonusGrabTrip->route_label }} · {{ $bonusGrabTrip->nights_away }} {{ __('nights') }}</div>
-                                            </div>
-                                            <flux:badge size="sm">{{ $bonusGrabTrip->status }}</flux:badge>
-                                        </div>
-                                        <div class="mt-2 grid grid-cols-2 gap-2 text-zinc-600 dark:text-zinc-300">
-                                            <div>{{ __('Level') }}: {{ number_format($bonusGrabTrip->expected_level_points, 0, ',', ' ') }}</div>
-                                            <div>{{ __('Points') }}: {{ number_format($bonusGrabTrip->expected_bonus_points, 0, ',', ' ') }}</div>
-                                            <div>{{ __('Cost') }}: {{ $bonusGrabTrip->cash_cost_min_nok ? number_format($bonusGrabTrip->cash_cost_min_nok, 0, ',', ' ') : 'TBD' }}-{{ $bonusGrabTrip->cash_cost_max_nok ? number_format($bonusGrabTrip->cash_cost_max_nok, 0, ',', ' ') : 'TBD' }} NOK</div>
-                                            <div>{{ __('Score') }}: {{ $bonusGrabTrip->feasibility_score ?? 'TBD' }}</div>
-                                        </div>
-                                    </div>
-                                @endforeach
-                            </div>
-                        @endif
-                    @else
-                        <div class="mt-4 rounded-lg border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">
-                            {{ __('No EuroBonus snapshot yet. Use the MCP loyalty tools to add current points, Amex assumptions, vouchers, and bonus grab candidates.') }}
-                        </div>
-                    @endif
-                </flux:card>
+                <livewire:pages::trips.manage.loyalty-panel
+                    :selected-trip-id="$selectedTripId"
+                    :key="'loyalty-'.$selectedTripId"
+                />
 
             </div>
 
             <div class="space-y-6">
+                <flux:card>
+                    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div class="min-w-0">
+                            <flux:heading>{{ $this->selectedTrip?->name ?? __('No trip selected') }}</flux:heading>
+                            <flux:text>
+                                {{ $this->selectedVariant ? __('Timeline: :name', ['name' => $this->selectedVariant->name]) : __('Choose a trip and timeline from the index.') }}
+                            </flux:text>
+                        </div>
+
+                        @if ($this->selectedTrip)
+                            <div class="flex flex-wrap gap-2">
+                                @if ($this->publicTripUrl())
+                                    <flux:button size="sm" icon="arrow-top-right-on-square" :href="$this->publicTripUrl()" target="_blank">
+                                        {{ __('Open frontend') }}
+                                    </flux:button>
+                                @endif
+                                @if ($this->publicPreviewUrl())
+                                    <flux:button size="sm" icon="eye" :href="$this->publicPreviewUrl()" target="_blank">
+                                        {{ __('Preview timeline') }}
+                                    </flux:button>
+                                @endif
+                            </div>
+                        @endif
+                    </div>
+
+                    <flux:tabs class="mt-5" wire:model.live="activeManageTab">
+                        <flux:tab name="timeline">{{ __('Timeline') }}</flux:tab>
+                        <flux:tab name="assets">{{ __('Assets') }}</flux:tab>
+                        <flux:tab name="journal">{{ __('Journal') }}</flux:tab>
+                        <flux:tab name="planning">{{ __('Planning') }}</flux:tab>
+                        <flux:tab name="publishing">{{ __('Publishing') }}</flux:tab>
+                    </flux:tabs>
+                </flux:card>
+
+                @if ($activeManageTab === 'publishing')
+                    <livewire:pages::trips.manage.publishing-panel
+                        :selected-trip-id="$selectedTripId"
+                        :selected-variant-id="$selectedVariantId"
+                        :key="'publishing-'.$selectedTripId.'-'.$selectedVariantId"
+                    />
+                @endif
+
+                @if ($activeManageTab === 'planning')
                 <flux:card>
                     <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div>
@@ -2372,7 +2233,9 @@ new #[Title('Manage trips')] class extends Component {
                         @endforelse
                     </div>
                 </flux:card>
+                @endif
 
+                @if ($activeManageTab === 'journal')
                 <flux:card>
                     <div class="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
                         <div>
@@ -2589,7 +2452,9 @@ new #[Title('Manage trips')] class extends Component {
                             @endif
                     </flux:modal>
                 </flux:card>
+                @endif
 
+                @if ($activeManageTab === 'timeline')
                 <flux:card>
                     <div class="flex flex-col gap-4 lg:flex-row lg:items-start">
                         <div class="lg:w-64">
@@ -3052,7 +2917,9 @@ new #[Title('Manage trips')] class extends Component {
                         </flux:modal>
                     </flux:card>
                 @endif
+                @endif
 
+                @if ($activeManageTab === 'assets')
                 <flux:card>
                     <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div>
@@ -3335,6 +3202,7 @@ new #[Title('Manage trips')] class extends Component {
                         </div>
                     </div>
                 </flux:card>
+                @endif
             </div>
         </div>
 </section>

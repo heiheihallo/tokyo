@@ -185,17 +185,66 @@ test('trip management exposes modal triggers for editing workflows', function ()
         ->test('pages::trips.manage')
         ->call('selectDay', $day->id)
         ->call('selectAsset', $hotel->id)
-        ->assertSee('Trip switcher')
-        ->assertSee('Trip')
+        ->assertSee('Manage trips')
         ->assertSee('Timeline')
+        ->assertSee('Assets')
+        ->assertSee('Journal')
+        ->assertSee('Planning')
+        ->assertSee('Publishing')
         ->assertSee('Edit day')
         ->assertSee('Slot')
         ->assertSee('Task')
-        ->assertSee('New entry')
+        ->assertDontSee('Shared assets')
+        ->set('activeManageTab', 'assets')
         ->assertSee('Shared assets')
         ->assertSee('Asset')
-        ->assertSee('Attach')
-        ->assertSee('New shared asset');
+        ->assertSee('Attach');
+});
+
+test('trip management trip index component manages trip and timeline selection', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+
+    Livewire::test('pages::trips.manage.trip-index', [
+        'selectedTripId' => $trip->id,
+        'selectedVariantId' => $variant->id,
+    ])
+        ->assertSee('Trips')
+        ->assertSee($trip->name)
+        ->assertSee('Timelines')
+        ->assertSee($variant->name)
+        ->set('tripForm.name', 'Tokyo Side Quest')
+        ->set('tripForm.summary', 'A separate planning scratchpad.')
+        ->call('createTrip')
+        ->assertHasNoErrors()
+        ->assertDispatched('trip-management-selection-changed')
+        ->set('variantForm.name', 'Fast rail loop')
+        ->set('variantForm.budget_scenario', 'value')
+        ->call('createVariant')
+        ->assertHasNoErrors();
+
+    expect(Trip::query()->where('name', 'Tokyo Side Quest')->exists())->toBeTrue();
+});
+
+test('trip management publishing panel updates frontend access', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+
+    Livewire::test('pages::trips.manage.publishing-panel', [
+        'selectedTripId' => $trip->id,
+        'selectedVariantId' => $variant->id,
+    ])
+        ->assertSee('Publishing')
+        ->call('setTripFrontendAccess', 'authenticated')
+        ->call('setVariantFrontendAccess', $variant->id, 'authenticated')
+        ->assertHasNoErrors();
+
+    expect($trip->fresh()->travelerAccessMode())->toBe('authenticated')
+        ->and($variant->fresh()->travelerAccessMode())->toBe('authenticated');
 });
 
 test('unpublished trips are not visible publicly', function () {
@@ -331,7 +380,6 @@ test('trip management can set family and private visibility modes', function () 
         ->call('setTripVisibility', 'family')
         ->call('setVariantVisibility', $variant->id, 'family')
         ->assertHasNoErrors()
-        ->assertSee('Planning login link')
         ->call('setTripVisibility', 'private')
         ->call('setVariantVisibility', $variant->id, 'private')
         ->assertHasNoErrors();
@@ -362,7 +410,6 @@ test('trip management can set frontend access modes for planning and launch', fu
         ->call('setTripFrontendAccess', 'authenticated')
         ->call('setVariantFrontendAccess', $variant->id, 'authenticated')
         ->assertHasNoErrors()
-        ->assertSee('Planning login link')
         ->call('setTripFrontendAccess', 'public')
         ->call('setVariantFrontendAccess', $variant->id, 'public')
         ->assertHasNoErrors();
@@ -460,6 +507,7 @@ test('trip management can create update publish and unpublish journal entries', 
         ->test('pages::trips.manage')
         ->set('selectedTripId', $trip->id)
         ->set('selectedVariantId', $variant->id)
+        ->set('activeManageTab', 'journal')
         ->set('journalForm.title', 'First trip journal note')
         ->set('journalForm.excerpt', 'Short traveler update.')
         ->set('journalForm.body', 'Longer journal body for the day.')
@@ -495,6 +543,7 @@ test('trip management can create update publish and unpublish journal entries', 
     Livewire::actingAs($user)
         ->test('pages::trips.manage')
         ->set('selectedTripId', $trip->id)
+        ->set('activeManageTab', 'journal')
         ->call('selectJournalEntry', $entry->id)
         ->call('unpublishJournalEntry')
         ->assertHasNoErrors();
@@ -523,6 +572,7 @@ test('trip management can upload journal media with private default visibility',
     Livewire::actingAs($user)
         ->test('pages::trips.manage')
         ->set('selectedTripId', $trip->id)
+        ->set('activeManageTab', 'journal')
         ->call('selectJournalEntry', $entry->id)
         ->set('journalMediaUpload', $upload)
         ->set('journalMediaForm.caption', 'Hotel lobby arrival')
@@ -696,6 +746,7 @@ test('trip management connects selected day workspace and journal quality checks
         ->call('startJournalForSelectedDay')
         ->assertSet('journalForm.title', 'Day 4 update')
         ->assertSet('journalForm.day_node_id', (string) $day->id)
+        ->set('activeManageTab', 'planning')
         ->set('planningCategoryFilter', 'journal')
         ->assertSee('Published journal entry has no traveler detail')
         ->call('openPlanningIssue', 'journal-empty-'.$entry->id)
@@ -1057,6 +1108,7 @@ test('trip management can search and edit shared assets', function () {
 
     Livewire::actingAs($user)
         ->test('pages::trips.manage')
+        ->set('activeManageTab', 'assets')
         ->set('assetSearch', 'Mets')
         ->assertSee('JR East Hotel Mets Premier Akihabara')
         ->call('selectAsset', $hotel->id)
@@ -1121,6 +1173,7 @@ test('trip management can attach and detach shared assets from the selected day'
     $component = Livewire::actingAs($user)
         ->test('pages::trips.manage')
         ->call('selectDay', $day->id)
+        ->set('activeManageTab', 'assets')
         ->set('assetTab', 'food')
         ->call('selectAsset', $foodSpot->id)
         ->set('assetAttachForm.time_label', 'lunch')
@@ -1185,6 +1238,7 @@ test('trip management planning health detects gaps and opens targets', function 
     Livewire::actingAs($user)
         ->test('pages::trips.manage')
         ->set('selectedVariantId', $variant->id)
+        ->set('activeManageTab', 'planning')
         ->assertSee('Planning health')
         ->assertSee('High-priority day is not booked')
         ->assertSee('Public slot is missing map coordinates')
@@ -1205,10 +1259,12 @@ test('trip management planning health detects gaps and opens targets', function 
         ->call('openPlanningIssue', 'slot-gap-'.$slot->id)
         ->assertSet('selectedDayId', $day->id)
         ->assertSet('selectedSlotId', $slot->id)
+        ->set('activeManageTab', 'timeline')
         ->assertSee('Planning health gap slot')
         ->call('openPlanningIssue', 'asset-gap-accommodations-'.$asset->id)
         ->assertSet('assetTab', 'accommodations')
         ->assertSet('selectedAssetId', $asset->id)
+        ->set('activeManageTab', 'assets')
         ->assertSee('Edit shared asset');
 });
 
@@ -1305,6 +1361,7 @@ test('trip management planning health quick fixes safe issues', function () {
         ->test('pages::trips.manage')
         ->set('selectedTripId', $trip->id)
         ->set('selectedVariantId', $variant->id)
+        ->set('activeManageTab', 'planning')
         ->assertSee('Planning health')
         ->call('quickFixPlanningIssue', 'day-high-unbooked-'.$day->id)
         ->call('quickFixPlanningIssue', 'slot-gap-'.$coordinateSlot->id)
@@ -1450,8 +1507,7 @@ test('trip management exposes authenticated public preview links', function () {
         ->test('pages::trips.manage')
         ->set('selectedTripId', $trip->id)
         ->set('selectedVariantId', $variant->id)
-        ->assertSee('Preview current timeline')
-        ->assertSee('Preview')
+        ->assertSee('Preview timeline')
         ->assertSee('preview=1', false)
         ->assertSee('timeline='.$variant->slug, false);
 });
