@@ -361,7 +361,8 @@ new #[Title('Tokyo Trip Planner')] class extends Component {
                     </flux:tabs>
 
                     @if ($view === 'map')
-                        <flux:card>
+                        <div wire:key="planner-view-map">
+                            <flux:card>
                             <div
                                 wire:ignore
                                 x-data
@@ -370,9 +371,11 @@ new #[Title('Tokyo Trip Planner')] class extends Component {
                             >
                                 <div x-ref="map" class="h-[520px] overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700"></div>
                             </div>
-                        </flux:card>
+                            </flux:card>
+                        </div>
                     @elseif ($view === 'compare')
-                        <flux:card>
+                        <div wire:key="planner-view-compare">
+                            <flux:card>
                             <div class="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
                                 <div>
                                     <flux:heading>{{ __('Timeline comparison') }}</flux:heading>
@@ -442,9 +445,11 @@ new #[Title('Tokyo Trip Planner')] class extends Component {
                                     </div>
                                 @endforelse
                             </div>
-                        </flux:card>
+                            </flux:card>
+                        </div>
                     @else
                         <div
+                            wire:key="planner-view-timeline"
                             x-data
                             x-init="$nextTick(() => {
                                 const selected = document.getElementById('admin-day-{{ $this->selectedDay?->stable_key }}');

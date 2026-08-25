@@ -83,6 +83,21 @@ test('planner compares multiple timelines and can open one from comparison', fun
         ->assertSet('view', 'timeline');
 });
 
+test('planner removes the map pane when switching from map to comparison', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+
+    Livewire::actingAs($user)
+        ->test('pages::planner.dashboard')
+        ->set('view', 'map')
+        ->assertSeeHtml('planner-view-map')
+        ->set('view', 'compare')
+        ->assertSeeHtml('planner-view-compare')
+        ->assertDontSeeHtml('planner-view-map')
+        ->assertSee('Timeline comparison');
+});
+
 test('admin timeline does not preselect a day', function () {
     Artisan::call('trip:import-japan-reference');
 
