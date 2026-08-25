@@ -28,6 +28,7 @@ class TripFactory extends Factory
             'arrival_preference' => 'HND',
             'is_public' => false,
             'published_at' => null,
+            'visibility' => 'private',
             'metadata' => [],
         ];
     }
@@ -37,6 +38,16 @@ class TripFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'is_public' => true,
             'published_at' => now(),
+            'visibility' => 'public',
+        ]);
+    }
+
+    public function familyVisible(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_public' => false,
+            'published_at' => null,
+            'visibility' => 'family',
         ]);
     }
 }

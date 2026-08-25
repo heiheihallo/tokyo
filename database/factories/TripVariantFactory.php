@@ -29,6 +29,7 @@ class TripVariantFactory extends Factory
             'is_default' => false,
             'is_public' => false,
             'published_at' => null,
+            'visibility' => 'private',
             'sort_order' => fake()->numberBetween(1, 100),
             'overrides' => [],
         ];
@@ -39,6 +40,16 @@ class TripVariantFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'is_public' => true,
             'published_at' => now(),
+            'visibility' => 'public',
+        ]);
+    }
+
+    public function familyVisible(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_public' => false,
+            'published_at' => null,
+            'visibility' => 'family',
         ]);
     }
 }

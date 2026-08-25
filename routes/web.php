@@ -11,6 +11,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 Route::livewire('trips/{trip:slug}/timelines/{variant:slug}/days/{dayNode:stable_key}', 'pages::public.day')
     ->name('trips.public.days.show');
+Route::livewire('trips/{trip:slug}/journal/{journalEntry}', 'pages::public.journal-show')
+    ->name('trips.public.journal.show');
+Route::livewire('trips/{trip:slug}/journal', 'pages::public.journal')
+    ->name('trips.public.journal');
 Route::livewire('trips/{trip:slug}', 'pages::public.trip')->name('trips.public');
 
 require __DIR__.'/settings.php';

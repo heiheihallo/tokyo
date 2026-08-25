@@ -3,6 +3,7 @@
 use App\Models\Accommodation;
 use App\Models\Activity;
 use App\Models\FoodSpot;
+use App\Models\JournalEntry;
 use App\Models\RoutePoint;
 use App\Models\TransportLeg;
 use Illuminate\Database\Eloquent\Model;
@@ -50,6 +51,7 @@ test('trip asset models register shared image collections and webp conversions',
     Accommodation::class,
     Activity::class,
     FoodSpot::class,
+    JournalEntry::class,
     RoutePoint::class,
     TransportLeg::class,
 ]);

@@ -59,6 +59,14 @@ new #[Title('Tokyo Trip Planner')] class extends Component {
         $this->showDayTimeline = ! $this->showDayTimeline;
     }
 
+    public function openComparisonVariant(string $variantSlug): void
+    {
+        $this->variantSlug = $variantSlug;
+        $this->selectedDayId = null;
+        $this->showDayTimeline = false;
+        $this->view = 'timeline';
+    }
+
     #[Computed]
     public function trips(): EloquentCollection
     {
@@ -138,6 +146,55 @@ new #[Title('Tokyo Trip Planner')] class extends Component {
     }
 
     #[Computed]
+    public function comparisonRows(): array
+    {
+        if (! $this->trip) {
+            return [];
+        }
+
+        return $this->trip->variants()
+            ->with(['dayNodes.accommodations', 'dayNodes.itineraryItems.subject', 'dayNodes.tasks'])
+            ->get()
+            ->map(function (TripVariant $variant): array {
+                $days = $variant->dayNodes;
+                $valueMin = (int) $days->sum('cost_value_min_nok');
+                $valueMax = (int) $days->sum('cost_value_max_nok');
+                $premiumMin = (int) $days->sum('cost_premium_min_nok');
+                $premiumMax = (int) $days->sum('cost_premium_max_nok');
+                $hotelNames = $days
+                    ->flatMap(fn (DayNode $day) => $day->accommodations->pluck('name'))
+                    ->filter()
+                    ->unique()
+                    ->values();
+                $longMoves = $days
+                    ->filter(fn (DayNode $day): bool => collect($day->node_types)->contains('travel') || $day->itineraryItems->where('item_type', 'move')->isNotEmpty())
+                    ->count();
+                $openTasks = $days
+                    ->flatMap(fn (DayNode $day) => $day->tasks)
+                    ->where('status', 'open')
+                    ->count();
+
+                return [
+                    'id' => $variant->id,
+                    'name' => $variant->name,
+                    'slug' => $variant->slug,
+                    'access' => $variant->travelerAccessLabel(),
+                    'days' => $days->count(),
+                    'nights' => max($days->count() - 1, 0),
+                    'value_cost' => $this->formatRange($valueMin, $valueMax),
+                    'premium_cost' => $this->formatRange($premiumMin, $premiumMax),
+                    'hotel_changes' => max($hotelNames->count() - 1, 0),
+                    'hotels' => $hotelNames->take(4)->join(' · ') ?: __('TBD'),
+                    'long_moves' => $longMoves,
+                    'open_tasks' => $openTasks,
+                    'high_priority_days' => $days->where('booking_priority', 'high')->whereNotIn('booking_status', ['booked', 'held'])->count(),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    #[Computed]
     public function mapPayload(): array
     {
         if (! $this->variant) {
@@ -195,6 +252,15 @@ new #[Title('Tokyo Trip Planner')] class extends Component {
             'buffer' => 'zinc',
             default => 'amber',
         };
+    }
+
+    private function formatRange(int $minimum, int $maximum): string
+    {
+        if ($minimum === 0 && $maximum === 0) {
+            return __('TBD');
+        }
+
+        return number_format($minimum, 0, '.', ' ').' - '.number_format($maximum, 0, '.', ' ').' NOK';
     }
 }; ?>
 
@@ -291,10 +357,12 @@ new #[Title('Tokyo Trip Planner')] class extends Component {
                     <flux:tabs wire:model.live="view">
                         <flux:tab name="timeline" icon="calendar-days">{{ __('Timeline') }}</flux:tab>
                         <flux:tab name="map" icon="map">{{ __('Map') }}</flux:tab>
+                        <flux:tab name="compare" icon="scale">{{ __('Compare') }}</flux:tab>
                     </flux:tabs>
 
                     @if ($view === 'map')
-                        <flux:card>
+                        <div wire:key="planner-view-map">
+                            <flux:card>
                             <div
                                 wire:ignore
                                 x-data
@@ -303,9 +371,85 @@ new #[Title('Tokyo Trip Planner')] class extends Component {
                             >
                                 <div x-ref="map" class="h-[520px] overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700"></div>
                             </div>
-                        </flux:card>
+                            </flux:card>
+                        </div>
+                    @elseif ($view === 'compare')
+                        <div wire:key="planner-view-compare">
+                            <flux:card>
+                            <div class="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                                <div>
+                                    <flux:heading>{{ __('Timeline comparison') }}</flux:heading>
+                                    <flux:text>{{ __('Compare route length, hotels, modeled cost bands, and unresolved planning load.') }}</flux:text>
+                                </div>
+                                <flux:button size="sm" icon="wrench-screwdriver" :href="route('trips.manage')" wire:navigate>
+                                    {{ __('Manage timelines') }}
+                                </flux:button>
+                            </div>
+
+                            <div class="mt-5 grid gap-4 xl:grid-cols-2">
+                                @forelse ($this->comparisonRows as $row)
+                                    <article class="rounded-lg border border-zinc-200 p-4 dark:border-zinc-700" wire:key="comparison-row-{{ $row['id'] }}">
+                                        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                            <div class="min-w-0">
+                                                <div class="text-lg font-semibold text-zinc-950 dark:text-white">{{ $row['name'] }}</div>
+                                                <div class="mt-1 text-sm text-zinc-500">{{ $row['access'] }}</div>
+                                            </div>
+                                            <flux:button size="xs" wire:click="openComparisonVariant('{{ $row['slug'] }}')">
+                                                {{ __('Open') }}
+                                            </flux:button>
+                                        </div>
+
+                                        <div class="mt-4 grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
+                                            <div class="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800">
+                                                <div class="text-zinc-500">{{ __('Nights') }}</div>
+                                                <div class="mt-1 font-semibold text-zinc-950 dark:text-white">{{ $row['nights'] }}</div>
+                                            </div>
+                                            <div class="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800">
+                                                <div class="text-zinc-500">{{ __('Hotel changes') }}</div>
+                                                <div class="mt-1 font-semibold text-zinc-950 dark:text-white">{{ $row['hotel_changes'] }}</div>
+                                            </div>
+                                            <div class="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800">
+                                                <div class="text-zinc-500">{{ __('Move days') }}</div>
+                                                <div class="mt-1 font-semibold text-zinc-950 dark:text-white">{{ $row['long_moves'] }}</div>
+                                            </div>
+                                            <div class="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800">
+                                                <div class="text-zinc-500">{{ __('Open tasks') }}</div>
+                                                <div class="mt-1 font-semibold {{ $row['open_tasks'] > 0 ? 'text-amber-600' : 'text-zinc-950 dark:text-white' }}">{{ $row['open_tasks'] }}</div>
+                                            </div>
+                                        </div>
+
+                                        <dl class="mt-4 space-y-2 text-sm text-zinc-600 dark:text-zinc-300">
+                                            <div class="flex justify-between gap-4">
+                                                <dt>{{ __('Value cost') }}</dt>
+                                                <dd class="text-right font-medium text-zinc-950 dark:text-white">{{ $row['value_cost'] }}</dd>
+                                            </div>
+                                            <div class="flex justify-between gap-4">
+                                                <dt>{{ __('Premium cost') }}</dt>
+                                                <dd class="text-right font-medium text-zinc-950 dark:text-white">{{ $row['premium_cost'] }}</dd>
+                                            </div>
+                                            <div>
+                                                <dt class="text-zinc-500">{{ __('Hotels') }}</dt>
+                                                <dd class="mt-1 leading-6">{{ $row['hotels'] }}</dd>
+                                            </div>
+                                        </dl>
+
+                                        @if ($row['high_priority_days'] > 0)
+                                            <div class="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                                                {{ trans_choice(':count high-priority day still needs a booking decision|:count high-priority days still need booking decisions', $row['high_priority_days'], ['count' => $row['high_priority_days']]) }}
+                                            </div>
+                                        @endif
+                                    </article>
+                                @empty
+                                    <div class="rounded-lg border border-dashed border-zinc-300 p-6 text-sm text-zinc-500 dark:border-zinc-700">
+                                        {{ __('Create at least one timeline to compare route options.') }}
+                                    </div>
+                                @endforelse
+                            </div>
+                            </flux:card>
+                        </div>
                     @else
                         <div
+                            wire:key="planner-view-timeline"
                             x-data
                             x-init="$nextTick(() => {
                                 const selected = document.getElementById('admin-day-{{ $this->selectedDay?->stable_key }}');

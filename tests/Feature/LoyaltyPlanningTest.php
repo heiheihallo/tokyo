@@ -203,7 +203,7 @@ test('loyalty planning stays private to management screens and is hidden publicl
     ]);
 
     Livewire::actingAs(User::factory()->create())
-        ->test('pages::trips.manage')
+        ->test('pages::trips.manage.loyalty-panel', ['selectedTripId' => $trip->id])
         ->set('selectedTripId', $trip->id)
         ->assertSee('EuroBonus plan')
         ->assertSee('Private Tokyo point grabber');
