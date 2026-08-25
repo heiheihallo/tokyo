@@ -736,9 +736,8 @@ test('trip management connects selected day workspace and journal quality checks
     ]);
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->set('selectedTripId', $trip->id)
-        ->set('selectedVariantId', $variant->id)
+        ->test('pages::trips.manage', ['selectedTripId' => $trip->id])
+        ->call('selectTripContext', $trip->id, $variant->id)
         ->call('selectDay', $day->id)
         ->assertSee('Day workspace')
         ->assertSee('Preview day')
@@ -746,11 +745,21 @@ test('trip management connects selected day workspace and journal quality checks
         ->call('startJournalForSelectedDay')
         ->assertSet('journalForm.title', 'Day 4 update')
         ->assertSet('journalForm.day_node_id', (string) $day->id)
-        ->set('activeManageTab', 'planning')
+        ->call('openPlanningIssueTarget', [
+            'target_type' => 'journal',
+            'journal_entry_id' => $entry->id,
+        ])
+        ->assertSet('selectedJournalEntryId', $entry->id);
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage.planning-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+        ])
         ->set('planningCategoryFilter', 'journal')
         ->assertSee('Published journal entry has no traveler detail')
         ->call('openPlanningIssue', 'journal-empty-'.$entry->id)
-        ->assertSet('selectedJournalEntryId', $entry->id);
+        ->assertDispatched('trip-management-open-planning-issue');
 });
 
 test('trip management day workspace creates quick slots and slot journal drafts', function () {
@@ -1236,9 +1245,10 @@ test('trip management planning health detects gaps and opens targets', function 
     ]);
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->set('selectedVariantId', $variant->id)
-        ->set('activeManageTab', 'planning')
+        ->test('pages::trips.manage.planning-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+        ])
         ->assertSee('Planning health')
         ->assertSee('High-priority day is not booked')
         ->assertSee('Public slot is missing map coordinates')
@@ -1257,14 +1267,26 @@ test('trip management planning health detects gaps and opens targets', function 
         ->assertSee('Published day has no public slots')
         ->set('planningCategoryFilter', 'all')
         ->call('openPlanningIssue', 'slot-gap-'.$slot->id)
+        ->assertDispatched('trip-management-open-planning-issue');
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage', ['selectedTripId' => $trip->id])
+        ->call('selectTripContext', $trip->id, $variant->id)
+        ->call('openPlanningIssueTarget', [
+            'target_type' => 'slot',
+            'day_id' => $day->id,
+            'slot_id' => $slot->id,
+        ])
         ->assertSet('selectedDayId', $day->id)
         ->assertSet('selectedSlotId', $slot->id)
-        ->set('activeManageTab', 'timeline')
         ->assertSee('Planning health gap slot')
-        ->call('openPlanningIssue', 'asset-gap-accommodations-'.$asset->id)
+        ->call('openPlanningIssueTarget', [
+            'target_type' => 'asset',
+            'asset_tab' => 'accommodations',
+            'asset_id' => $asset->id,
+        ])
         ->assertSet('assetTab', 'accommodations')
         ->assertSet('selectedAssetId', $asset->id)
-        ->set('activeManageTab', 'assets')
         ->assertSee('Edit shared asset');
 });
 
@@ -1358,10 +1380,10 @@ test('trip management planning health quick fixes safe issues', function () {
     ]);
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->set('selectedTripId', $trip->id)
-        ->set('selectedVariantId', $variant->id)
-        ->set('activeManageTab', 'planning')
+        ->test('pages::trips.manage.planning-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+        ])
         ->assertSee('Planning health')
         ->call('quickFixPlanningIssue', 'day-high-unbooked-'.$day->id)
         ->call('quickFixPlanningIssue', 'slot-gap-'.$coordinateSlot->id)
