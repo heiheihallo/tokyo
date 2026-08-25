@@ -184,7 +184,6 @@ test('trip management exposes modal triggers for editing workflows', function ()
     Livewire::actingAs($user)
         ->test('pages::trips.manage')
         ->call('selectDay', $day->id)
-        ->call('selectAsset', $hotel->id)
         ->assertSee('Manage trips')
         ->assertSee('Timeline')
         ->assertSee('Assets')
@@ -194,8 +193,14 @@ test('trip management exposes modal triggers for editing workflows', function ()
         ->assertSee('Edit day')
         ->assertSee('Slot')
         ->assertSee('Task')
-        ->assertDontSee('Shared assets')
-        ->set('activeManageTab', 'assets')
+        ->assertDontSee('Shared assets');
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage.assets-panel', [
+            'selectedDayId' => $day->id,
+            'selectedAssetId' => $hotel->id,
+            'assetTab' => 'accommodations',
+        ])
         ->assertSee('Shared assets')
         ->assertSee('Asset')
         ->assertSee('Attach');
@@ -1116,8 +1121,10 @@ test('trip management can search and edit shared assets', function () {
     ]);
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->set('activeManageTab', 'assets')
+        ->test('pages::trips.manage.assets-panel', [
+            'selectedDayId' => $day->id,
+            'assetTab' => 'accommodations',
+        ])
         ->set('assetSearch', 'Mets')
         ->assertSee('JR East Hotel Mets Premier Akihabara')
         ->call('selectAsset', $hotel->id)
@@ -1180,10 +1187,10 @@ test('trip management can attach and detach shared assets from the selected day'
     $foodSpot = FoodSpot::query()->where('stable_key', 'tokyo-ramen-street')->firstOrFail();
 
     $component = Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->call('selectDay', $day->id)
-        ->set('activeManageTab', 'assets')
-        ->set('assetTab', 'food')
+        ->test('pages::trips.manage.assets-panel', [
+            'selectedDayId' => $day->id,
+            'assetTab' => 'food',
+        ])
         ->call('selectAsset', $foodSpot->id)
         ->set('assetAttachForm.time_label', 'lunch')
         ->set('assetAttachForm.title', 'Tokyo Station ramen day anchor')
