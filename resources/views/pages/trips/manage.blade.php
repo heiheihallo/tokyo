@@ -12,6 +12,7 @@ use App\Models\TransportLeg;
 use App\Models\Trip;
 use App\Models\TripVariant;
 use Flux\Flux;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
@@ -1154,9 +1155,13 @@ new #[Title('Manage trips')] class extends Component {
         $search = trim($this->assetSearch);
 
         if ($search !== '') {
-            $query->where(function ($query) use ($search): void {
+            $query->where(function (Builder $query) use ($search): void {
+                $searchTerm = '%'.mb_strtolower($search).'%';
+
                 foreach ($this->assetSearchColumns() as $column) {
-                    $query->orWhere($column, 'ilike', '%'.$search.'%');
+                    $wrappedColumn = $query->getQuery()->getGrammar()->wrap($column);
+
+                    $query->orWhereRaw("lower({$wrappedColumn}) like ?", [$searchTerm]);
                 }
             });
         }

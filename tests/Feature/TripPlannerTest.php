@@ -22,6 +22,8 @@ test('guests cannot access planner and trip management screens', function () {
 });
 
 test('authenticated users can view the planner shell', function () {
+    Artisan::call('trip:import-japan-reference');
+
     $this->actingAs(User::factory()->create());
 
     $this->get(route('dashboard'))
