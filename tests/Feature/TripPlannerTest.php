@@ -170,6 +170,32 @@ test('trip management can persist selected day edits', function () {
         ->booking_status->toBe('planned');
 });
 
+test('trip management exposes modal triggers for editing workflows', function () {
+    Artisan::call('trip:import-japan-reference');
+
+    $user = User::factory()->create();
+    $trip = Trip::query()->where('slug', 'japan-summer-2027')->firstOrFail();
+    $variant = $trip->variants()->where('slug', 'value-copenhagen-stopover')->firstOrFail();
+    $day = $variant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
+    $hotel = Accommodation::query()->where('stable_key', 'mets-akihabara')->firstOrFail();
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage')
+        ->call('selectDay', $day->id)
+        ->call('selectAsset', $hotel->id)
+        ->assertSee('Trip switcher')
+        ->assertSee('Trip')
+        ->assertSee('Timeline')
+        ->assertSee('Edit day')
+        ->assertSee('Slot')
+        ->assertSee('Task')
+        ->assertSee('New entry')
+        ->assertSee('Shared assets')
+        ->assertSee('Asset')
+        ->assertSee('Attach')
+        ->assertSee('New shared asset');
+});
+
 test('unpublished trips are not visible publicly', function () {
     Artisan::call('trip:import-japan-reference');
 

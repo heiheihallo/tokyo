@@ -2078,7 +2078,17 @@ new #[Title('Manage trips')] class extends Component {
         <div class="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
             <div class="space-y-6">
                 <flux:card>
-                    <flux:heading>{{ __('Trip switcher') }}</flux:heading>
+                    <div class="flex items-start justify-between gap-3">
+                        <flux:heading>{{ __('Trip switcher') }}</flux:heading>
+                        <div class="flex gap-2">
+                            <flux:modal.trigger name="create-trip">
+                                <flux:button size="sm" icon="plus">{{ __('Trip') }}</flux:button>
+                            </flux:modal.trigger>
+                            <flux:modal.trigger name="create-timeline">
+                                <flux:button size="sm" icon="plus" :disabled="! $this->selectedTrip">{{ __('Timeline') }}</flux:button>
+                            </flux:modal.trigger>
+                        </div>
+                    </div>
                     <div class="mt-4 space-y-4">
                         <flux:select wire:model.live="selectedTripId" :label="__('Trip')">
                             <flux:select.option value="">{{ __('Select trip') }}</flux:select.option>
@@ -2166,6 +2176,54 @@ new #[Title('Manage trips')] class extends Component {
                     </div>
                 </flux:card>
 
+                <flux:modal name="create-trip" class="md:w-[32rem]">
+                    <form wire:submit="createTrip" class="space-y-5">
+                        <div>
+                            <flux:heading size="lg">{{ __('New trip') }}</flux:heading>
+                            <flux:text class="mt-2">{{ __('Create a separate planning workspace with its own timelines.') }}</flux:text>
+                        </div>
+
+                        <flux:input wire:model="tripForm.name" :label="__('Name')" />
+                        <flux:textarea wire:model="tripForm.summary" :label="__('Summary')" rows="3" />
+                        <div class="grid grid-cols-2 gap-3">
+                            <flux:input wire:model="tripForm.starts_on" :label="__('Starts')" type="date" />
+                            <flux:input wire:model="tripForm.ends_on" :label="__('Ends')" type="date" />
+                        </div>
+                        <flux:input wire:model="tripForm.arrival_preference" :label="__('Arrival preference')" />
+
+                        <div class="flex justify-end gap-2">
+                            <flux:modal.close>
+                                <flux:button type="button">{{ __('Cancel') }}</flux:button>
+                            </flux:modal.close>
+                            <flux:button type="submit" variant="primary" icon="plus">{{ __('Create trip') }}</flux:button>
+                        </div>
+                    </form>
+                </flux:modal>
+
+                <flux:modal name="create-timeline" class="md:w-[32rem]">
+                    <form wire:submit="createVariant" class="space-y-5">
+                        <div>
+                            <flux:heading size="lg">{{ __('New timeline') }}</flux:heading>
+                            <flux:text class="mt-2">{{ __('Add another route option inside the selected trip.') }}</flux:text>
+                        </div>
+
+                        <flux:input wire:model="variantForm.name" :label="__('Name')" />
+                        <flux:select wire:model="variantForm.budget_scenario" :label="__('Budget')">
+                            <flux:select.option value="value">{{ __('Value') }}</flux:select.option>
+                            <flux:select.option value="premium">{{ __('Premium') }}</flux:select.option>
+                        </flux:select>
+                        <flux:input wire:model="variantForm.stopover_type" :label="__('Stopover')" />
+                        <flux:textarea wire:model="variantForm.flight_strategy" :label="__('Flight strategy')" rows="3" />
+
+                        <div class="flex justify-end gap-2">
+                            <flux:modal.close>
+                                <flux:button type="button">{{ __('Cancel') }}</flux:button>
+                            </flux:modal.close>
+                            <flux:button type="submit" variant="primary" icon="plus">{{ __('Create timeline') }}</flux:button>
+                        </div>
+                    </form>
+                </flux:modal>
+
                 <flux:card>
                     <div class="flex items-start justify-between gap-3">
                         <div>
@@ -2231,33 +2289,6 @@ new #[Title('Manage trips')] class extends Component {
                     @endif
                 </flux:card>
 
-                <flux:card>
-                    <flux:heading>{{ __('New trip') }}</flux:heading>
-                    <form wire:submit="createTrip" class="mt-4 space-y-4">
-                        <flux:input wire:model="tripForm.name" :label="__('Name')" />
-                        <flux:textarea wire:model="tripForm.summary" :label="__('Summary')" rows="3" />
-                        <div class="grid grid-cols-2 gap-3">
-                            <flux:input wire:model="tripForm.starts_on" :label="__('Starts')" type="date" />
-                            <flux:input wire:model="tripForm.ends_on" :label="__('Ends')" type="date" />
-                        </div>
-                        <flux:input wire:model="tripForm.arrival_preference" :label="__('Arrival preference')" />
-                        <flux:button type="submit" variant="primary" icon="plus">{{ __('Create trip') }}</flux:button>
-                    </form>
-                </flux:card>
-
-                <flux:card>
-                    <flux:heading>{{ __('New timeline') }}</flux:heading>
-                    <form wire:submit="createVariant" class="mt-4 space-y-4">
-                        <flux:input wire:model="variantForm.name" :label="__('Name')" />
-                        <flux:select wire:model="variantForm.budget_scenario" :label="__('Budget')">
-                            <flux:select.option value="value">{{ __('Value') }}</flux:select.option>
-                            <flux:select.option value="premium">{{ __('Premium') }}</flux:select.option>
-                        </flux:select>
-                        <flux:input wire:model="variantForm.stopover_type" :label="__('Stopover')" />
-                        <flux:textarea wire:model="variantForm.flight_strategy" :label="__('Flight strategy')" rows="3" />
-                        <flux:button type="submit" icon="plus">{{ __('Create timeline') }}</flux:button>
-                    </form>
-                </flux:card>
             </div>
 
             <div class="space-y-6">
@@ -2343,19 +2374,19 @@ new #[Title('Manage trips')] class extends Component {
                             <flux:heading>{{ __('Journal') }}</flux:heading>
                             <flux:text>{{ __('Trip updates that can attach to the whole route, one day, or one slot.') }}</flux:text>
                         </div>
-                        <flux:button size="sm" icon="plus" wire:click="resetJournalForm">
-                            {{ __('New entry') }}
-                        </flux:button>
+                        <flux:modal.trigger name="journal-entry">
+                            <flux:button size="sm" icon="plus" wire:click="resetJournalForm">
+                                {{ __('New entry') }}
+                            </flux:button>
+                        </flux:modal.trigger>
                     </div>
 
-                    <div class="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+                    <div class="mt-5">
                         <div class="space-y-3">
                             @forelse ($this->journalEntries as $entry)
-                                <button
-                                    type="button"
+                                <article
                                     wire:key="journal-entry-{{ $entry->id }}"
-                                    wire:click="selectJournalEntry({{ $entry->id }})"
-                                    class="block w-full rounded-lg border p-4 text-left transition hover:border-teal-600 {{ $this->selectedJournalEntryId === $entry->id ? 'border-teal-700 bg-teal-50 dark:border-teal-300 dark:bg-teal-950/40' : 'border-zinc-200 dark:border-zinc-700' }}"
+                                    class="rounded-lg border p-4 {{ $this->selectedJournalEntryId === $entry->id ? 'border-teal-700 bg-teal-50 dark:border-teal-300 dark:bg-teal-950/40' : 'border-zinc-200 dark:border-zinc-700' }}"
                                 >
                                     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                         <div class="min-w-0">
@@ -2382,17 +2413,30 @@ new #[Title('Manage trips')] class extends Component {
                                                 <p class="mt-2 line-clamp-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">{{ $entry->excerpt }}</p>
                                             @endif
                                         </div>
+                                        <div class="flex shrink-0 flex-wrap gap-2">
+                                            <flux:modal.trigger name="journal-entry">
+                                                <flux:button size="xs" icon="pencil-square" wire:click="selectJournalEntry({{ $entry->id }})">
+                                                    {{ __('Edit') }}
+                                                </flux:button>
+                                            </flux:modal.trigger>
+                                            <flux:modal.trigger name="journal-media">
+                                                <flux:button size="xs" icon="photo" wire:click="selectJournalEntry({{ $entry->id }})">
+                                                    {{ __('Media') }}
+                                                </flux:button>
+                                            </flux:modal.trigger>
+                                        </div>
                                     </div>
-                                </button>
+                                </article>
                             @empty
                                 <div class="rounded-lg border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">
                                     {{ __('No journal entries yet.') }}
                                 </div>
                             @endforelse
                         </div>
+                    </div>
 
-                        <div>
-                            <form wire:submit="{{ $this->selectedJournalEntry ? 'updateJournalEntry' : 'createJournalEntry' }}" class="space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                    <flux:modal name="journal-entry" class="md:w-[42rem]">
+                            <form wire:submit="{{ $this->selectedJournalEntry ? 'updateJournalEntry' : 'createJournalEntry' }}" class="space-y-4">
                                 <div>
                                     <div class="text-sm font-semibold text-zinc-950 dark:text-white">
                                         {{ $this->selectedJournalEntry ? __('Edit journal entry') : __('New journal entry') }}
@@ -2468,9 +2512,11 @@ new #[Title('Manage trips')] class extends Component {
                                     @endif
                                 </div>
                             </form>
+                    </flux:modal>
 
+                    <flux:modal name="journal-media" class="md:w-[42rem]">
                             @if ($this->selectedJournalEntry)
-                                <div class="mt-4 space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                                <div class="space-y-4">
                                     <div>
                                         <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Journal media') }}</div>
                                         <div class="mt-1 text-sm text-zinc-500">{{ __('Images are private until marked public.') }}</div>
@@ -2536,8 +2582,7 @@ new #[Title('Manage trips')] class extends Component {
                                     </div>
                                 </div>
                             @endif
-                        </div>
-                    </div>
+                    </flux:modal>
                 </flux:card>
 
                 <flux:card>
@@ -2555,9 +2600,34 @@ new #[Title('Manage trips')] class extends Component {
                         </div>
 
                         <div class="min-w-0 flex-1">
-                            <flux:heading>{{ __('Edit selected day') }}</flux:heading>
+                            <div class="flex items-start justify-between gap-3">
+                                <div>
+                                    <flux:heading>{{ __('Selected day') }}</flux:heading>
+                                    <flux:text>{{ __('Review the current day and open the editor only when you need it.') }}</flux:text>
+                                </div>
+                                @if ($this->selectedDay)
+                                    <flux:modal.trigger name="edit-day">
+                                        <flux:button size="sm" icon="pencil-square">{{ __('Edit day') }}</flux:button>
+                                    </flux:modal.trigger>
+                                @endif
+                            </div>
                             @if ($this->selectedDay)
-                                <form wire:submit="updateDay" class="mt-4 grid gap-4 lg:grid-cols-2">
+                                <div class="mt-4 rounded-lg border border-zinc-200 p-4 text-sm dark:border-zinc-700">
+                                    <div class="font-medium text-zinc-950 dark:text-white">{{ $this->selectedDay->title }}</div>
+                                    <div class="mt-1 text-zinc-500">{{ __('Day :day', ['day' => $this->selectedDay->day_number]) }} · {{ $this->selectedDay->location }}</div>
+                                    <div class="mt-3 flex flex-wrap gap-2">
+                                        <flux:badge color="{{ $this->selectedDay->booking_priority === 'high' ? 'red' : ($this->selectedDay->booking_priority === 'medium' ? 'amber' : 'zinc') }}">{{ $this->selectedDay->booking_priority }}</flux:badge>
+                                        <flux:badge color="{{ $this->selectedDay->booking_status === 'booked' ? 'green' : 'zinc' }}">{{ $this->selectedDay->booking_status }}</flux:badge>
+                                        <flux:badge>{{ $this->selectedDay->itineraryItems->count() }} {{ __('slots') }}</flux:badge>
+                                    </div>
+                                </div>
+
+                                <flux:modal name="edit-day" class="md:w-[42rem]">
+                                    <form wire:submit="updateDay" class="grid gap-4 lg:grid-cols-2">
+                                    <div class="lg:col-span-2">
+                                        <flux:heading size="lg">{{ __('Edit day') }}</flux:heading>
+                                        <flux:text class="mt-2">{{ __('Update private planning status and traveler-facing day backup notes.') }}</flux:text>
+                                    </div>
                                     <flux:input wire:model="dayForm.title" :label="__('Title')" />
                                     <flux:input wire:model="dayForm.location" :label="__('Location')" />
                                     <flux:select wire:model="dayForm.booking_priority" :label="__('Priority')">
@@ -2580,9 +2650,15 @@ new #[Title('Manage trips')] class extends Component {
                                         <flux:textarea wire:model="dayForm.rain_backup" :label="__('Rain backup')" rows="3" />
                                     </div>
                                     <div class="lg:col-span-2">
-                                        <flux:button type="submit" variant="primary" icon="check">{{ __('Save day') }}</flux:button>
+                                        <div class="flex justify-end gap-2">
+                                            <flux:modal.close>
+                                                <flux:button type="button">{{ __('Cancel') }}</flux:button>
+                                            </flux:modal.close>
+                                            <flux:button type="submit" variant="primary" icon="check">{{ __('Save day') }}</flux:button>
+                                        </div>
                                     </div>
-                                </form>
+                                    </form>
+                                </flux:modal>
                             @else
                                 <flux:text class="mt-4">{{ __('Select a timeline with days to edit day details.') }}</flux:text>
                             @endif
@@ -2740,10 +2816,15 @@ new #[Title('Manage trips')] class extends Component {
                                 <flux:heading>{{ __('Day slots') }}</flux:heading>
                                 <flux:text>{{ __('Loose typed anchors for movement, stays, meals, activities, and buffers. Add times only when they matter.') }}</flux:text>
                             </div>
-                            <flux:badge>{{ $this->selectedDay->itineraryItems->count() }} {{ __('slots') }}</flux:badge>
+                            <div class="flex flex-wrap gap-2">
+                                <flux:badge>{{ $this->selectedDay->itineraryItems->count() }} {{ __('slots') }}</flux:badge>
+                                <flux:modal.trigger name="create-slot">
+                                    <flux:button size="sm" icon="plus">{{ __('Slot') }}</flux:button>
+                                </flux:modal.trigger>
+                            </div>
                         </div>
 
-                        <div class="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+                        <div class="mt-5">
                             <div class="space-y-3">
                                 @forelse ($this->selectedDay->itineraryItems as $slot)
                                     <div class="rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
@@ -2788,9 +2869,11 @@ new #[Title('Manage trips')] class extends Component {
                                                 <flux:button size="xs" icon="newspaper" wire:click="startJournalForSelectedSlot({{ $slot->id }})">
                                                     {{ __('Journal') }}
                                                 </flux:button>
-                                                <flux:button size="xs" icon="pencil-square" wire:click="selectSlot({{ $slot->id }})">
-                                                    {{ __('Edit') }}
-                                                </flux:button>
+                                                <flux:modal.trigger name="edit-slot">
+                                                    <flux:button size="xs" icon="pencil-square" wire:click="selectSlot({{ $slot->id }})">
+                                                        {{ __('Edit') }}
+                                                    </flux:button>
+                                                </flux:modal.trigger>
                                                 <flux:button size="xs" variant="danger" wire:click="deleteSlot({{ $slot->id }})">
                                                     {{ __('Remove') }}
                                                 </flux:button>
@@ -2801,12 +2884,13 @@ new #[Title('Manage trips')] class extends Component {
                                     <flux:text>{{ __('No slots yet. Add only the anchors that help the day make sense.') }}</flux:text>
                                 @endforelse
                             </div>
+                        </div>
 
-                            <div class="space-y-6">
+                        <flux:modal name="edit-slot" class="md:w-[40rem]">
                                 @if ($this->selectedSlot)
-                                    <form wire:submit="updateSlot" class="space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                                    <form wire:submit="updateSlot" class="space-y-4">
                                         <div>
-                                            <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Edit slot') }}</div>
+                                            <flux:heading size="lg">{{ __('Edit slot') }}</flux:heading>
                                             <div class="mt-1 text-sm text-zinc-500">{{ $this->selectedSlot->title }}</div>
                                         </div>
 
@@ -2838,12 +2922,22 @@ new #[Title('Manage trips')] class extends Component {
                                         </div>
                                         <flux:textarea wire:model="slotEditForm.summary" :label="__('Traveler note')" rows="3" />
                                         <flux:checkbox wire:model="slotEditForm.is_public" :label="__('Show publicly')" />
-                                        <flux:button type="submit" variant="primary" icon="check">{{ __('Save slot') }}</flux:button>
+                                        <div class="flex justify-end gap-2">
+                                            <flux:modal.close>
+                                                <flux:button type="button">{{ __('Cancel') }}</flux:button>
+                                            </flux:modal.close>
+                                            <flux:button type="submit" variant="primary" icon="check">{{ __('Save slot') }}</flux:button>
+                                        </div>
                                     </form>
                                 @endif
+                        </flux:modal>
 
+                        <flux:modal name="create-slot" class="md:w-[40rem]">
                                 <form wire:submit="createSlot" class="space-y-4">
-                                    <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Add slot') }}</div>
+                                    <div>
+                                        <flux:heading size="lg">{{ __('Add slot') }}</flux:heading>
+                                        <flux:text class="mt-2">{{ __('Add only the anchors that help the day make sense.') }}</flux:text>
+                                    </div>
                                     <flux:select wire:model="slotForm.item_type" :label="__('Type')">
                                         <flux:select.option value="stay">{{ __('Stay / hotel') }}</flux:select.option>
                                         <flux:select.option value="move">{{ __('Move / transport') }}</flux:select.option>
@@ -2872,10 +2966,14 @@ new #[Title('Manage trips')] class extends Component {
                                     </div>
                                     <flux:textarea wire:model="slotForm.summary" :label="__('Traveler note')" rows="3" />
                                     <flux:checkbox wire:model="slotForm.is_public" :label="__('Show publicly')" />
-                                    <flux:button type="submit" variant="primary" icon="plus">{{ __('Add slot') }}</flux:button>
+                                    <div class="flex justify-end gap-2">
+                                        <flux:modal.close>
+                                            <flux:button type="button">{{ __('Cancel') }}</flux:button>
+                                        </flux:modal.close>
+                                        <flux:button type="submit" variant="primary" icon="plus">{{ __('Add slot') }}</flux:button>
+                                    </div>
                                 </form>
-                            </div>
-                        </div>
+                        </flux:modal>
                     </flux:card>
 
                     <flux:card>
@@ -2884,10 +2982,15 @@ new #[Title('Manage trips')] class extends Component {
                                 <flux:heading>{{ __('Todo / fix list') }}</flux:heading>
                                 <flux:text>{{ __('Private planning tasks for unresolved timing, tickets, routes, and cleanup.') }}</flux:text>
                             </div>
-                            <flux:badge>{{ $this->selectedDay->tasks->where('status', 'open')->count() }} {{ __('open') }}</flux:badge>
+                            <div class="flex flex-wrap gap-2">
+                                <flux:badge>{{ $this->selectedDay->tasks->where('status', 'open')->count() }} {{ __('open') }}</flux:badge>
+                                <flux:modal.trigger name="create-task">
+                                    <flux:button size="sm" icon="plus">{{ __('Task') }}</flux:button>
+                                </flux:modal.trigger>
+                            </div>
                         </div>
 
-                        <div class="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+                        <div class="mt-5">
                             <div class="space-y-3">
                                 @forelse ($this->selectedDay->tasks as $task)
                                     <div class="rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
@@ -2913,8 +3016,14 @@ new #[Title('Manage trips')] class extends Component {
                                     <flux:text>{{ __('No open planning tasks for this day.') }}</flux:text>
                                 @endforelse
                             </div>
+                        </div>
 
+                        <flux:modal name="create-task" class="md:w-[32rem]">
                             <form wire:submit="createTask" class="space-y-4">
+                                <div>
+                                    <flux:heading size="lg">{{ __('Add task') }}</flux:heading>
+                                    <flux:text class="mt-2">{{ __('Capture a private planning todo, fix, booking, or research item.') }}</flux:text>
+                                </div>
                                 <flux:select wire:model="taskForm.task_type" :label="__('Type')">
                                     <flux:select.option value="todo">{{ __('Todo') }}</flux:select.option>
                                     <flux:select.option value="fix">{{ __('Fix') }}</flux:select.option>
@@ -2928,9 +3037,14 @@ new #[Title('Manage trips')] class extends Component {
                                     <flux:select.option value="low">{{ __('Low') }}</flux:select.option>
                                 </flux:select>
                                 <flux:textarea wire:model="taskForm.notes" :label="__('Notes')" rows="3" />
-                                <flux:button type="submit" icon="plus">{{ __('Add task') }}</flux:button>
+                                <div class="flex justify-end gap-2">
+                                    <flux:modal.close>
+                                        <flux:button type="button">{{ __('Cancel') }}</flux:button>
+                                    </flux:modal.close>
+                                    <flux:button type="submit" variant="primary" icon="plus">{{ __('Add task') }}</flux:button>
+                                </div>
                             </form>
-                        </div>
+                        </flux:modal>
                     </flux:card>
                 @endif
 
@@ -2940,22 +3054,38 @@ new #[Title('Manage trips')] class extends Component {
                             <flux:heading>{{ __('Shared assets') }}</flux:heading>
                             <flux:text>{{ __('Assets are reusable across trips and timelines; day-specific notes live on the attachment.') }}</flux:text>
                         </div>
-                        <flux:tabs wire:model.live="assetTab">
-                            <flux:tab name="accommodations">{{ __('Hotels') }}</flux:tab>
-                            <flux:tab name="activities">{{ __('Activities') }}</flux:tab>
-                            <flux:tab name="food">{{ __('Food') }}</flux:tab>
-                            <flux:tab name="transport">{{ __('Transport') }}</flux:tab>
-                        </flux:tabs>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <flux:tabs wire:model.live="assetTab">
+                                <flux:tab name="accommodations">{{ __('Hotels') }}</flux:tab>
+                                <flux:tab name="activities">{{ __('Activities') }}</flux:tab>
+                                <flux:tab name="food">{{ __('Food') }}</flux:tab>
+                                <flux:tab name="transport">{{ __('Transport') }}</flux:tab>
+                            </flux:tabs>
+                            <flux:modal.trigger name="create-asset">
+                                <flux:button size="sm" icon="plus">{{ __('Asset') }}</flux:button>
+                            </flux:modal.trigger>
+                        </div>
                     </div>
 
-                    <form wire:submit="createAsset" class="mt-4 grid gap-3 lg:grid-cols-4">
-                        <flux:input wire:model="assetForm.name" :label="__('Name')" />
-                        <flux:input wire:model="assetForm.city" :label="__('City')" />
-                        <flux:input wire:model="assetForm.country" :label="__('Country')" />
-                        <div class="flex items-end">
-                            <flux:button type="submit" icon="plus">{{ __('Add asset') }}</flux:button>
-                        </div>
-                    </form>
+                    <flux:modal name="create-asset" class="md:w-[34rem]">
+                        <form wire:submit="createAsset" class="space-y-4">
+                            <div>
+                                <flux:heading size="lg">{{ __('New shared asset') }}</flux:heading>
+                                <flux:text class="mt-2">{{ __('Create a reusable hotel, activity, food spot, or transport leg in the active tab.') }}</flux:text>
+                            </div>
+                            <flux:input wire:model="assetForm.name" :label="__('Name')" />
+                            <div class="grid gap-3 sm:grid-cols-2">
+                                <flux:input wire:model="assetForm.city" :label="__('City')" />
+                                <flux:input wire:model="assetForm.country" :label="__('Country')" />
+                            </div>
+                            <div class="flex justify-end gap-2">
+                                <flux:modal.close>
+                                    <flux:button type="button">{{ __('Cancel') }}</flux:button>
+                                </flux:modal.close>
+                                <flux:button type="submit" variant="primary" icon="plus">{{ __('Add asset') }}</flux:button>
+                            </div>
+                        </form>
+                    </flux:modal>
 
                     <div class="mt-5 grid gap-3 md:grid-cols-4">
                         <div class="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-700">
@@ -3023,9 +3153,11 @@ new #[Title('Manage trips')] class extends Component {
                                                 </div>
                                             </flux:table.cell>
                                             <flux:table.cell>
-                                                <flux:button size="xs" icon="pencil-square" wire:click="selectAsset({{ $asset->id }})">
-                                                    {{ __('Edit') }}
-                                                </flux:button>
+                                                <flux:modal.trigger name="edit-asset">
+                                                    <flux:button size="xs" icon="pencil-square" wire:click="selectAsset({{ $asset->id }})">
+                                                        {{ __('Edit') }}
+                                                    </flux:button>
+                                                </flux:modal.trigger>
                                             </flux:table.cell>
                                         </flux:table.row>
                                     @empty
@@ -3039,82 +3171,33 @@ new #[Title('Manage trips')] class extends Component {
 
                         <div>
                             @if ($this->selectedAsset)
-                                <form wire:submit="updateAsset" class="space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
-                                    <div>
-                                        <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Edit shared asset') }}</div>
-                                        <div class="mt-1 text-sm text-zinc-500">{{ $this->assetLabel($this->selectedAsset) }}</div>
-                                    </div>
-
-                                    @if ($this->assetTab === 'transport')
-                                        <flux:input wire:model="assetEditForm.route_label" :label="__('Route label')" />
-                                        <div class="grid grid-cols-2 gap-3">
-                                            <flux:input wire:model="assetEditForm.mode" :label="__('Mode')" />
-                                            <flux:input wire:model="assetEditForm.operator" :label="__('Operator')" />
+                                <div class="rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                        <div class="min-w-0">
+                                            <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ $this->assetLabel($this->selectedAsset) }}</div>
+                                            <div class="mt-1 text-sm text-zinc-500">{{ $this->assetLocation($this->selectedAsset) }}</div>
+                                            @if ($this->selectedAsset->notes)
+                                                <p class="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">{{ $this->selectedAsset->notes }}</p>
+                                            @endif
                                         </div>
-                                        <flux:input wire:model="assetEditForm.origin" :label="__('Origin')" />
-                                        <flux:input wire:model="assetEditForm.destination" :label="__('Destination')" />
-                                        <flux:input wire:model="assetEditForm.duration_label" :label="__('Duration')" />
-                                        <flux:input wire:model="assetEditForm.reservation_url" :label="__('Reservation URL')" type="url" />
-                                    @else
-                                        <flux:input wire:model="assetEditForm.name" :label="__('Name')" />
-                                        <div class="grid grid-cols-2 gap-3">
-                                            <flux:input wire:model="assetEditForm.city" :label="__('City')" />
-                                            <flux:input wire:model="assetEditForm.country" :label="__('Country')" />
-                                        </div>
-
-                                        @if ($this->assetTab === 'accommodations')
-                                            <flux:input wire:model="assetEditForm.neighborhood" :label="__('Neighborhood')" />
-                                            <flux:input wire:model="assetEditForm.breakfast_note" :label="__('Breakfast note')" />
-                                            <flux:input wire:model="assetEditForm.dinner_note" :label="__('Dinner note')" />
-                                            <flux:input wire:model="assetEditForm.reservation_url" :label="__('Reservation URL')" type="url" />
-                                        @elseif ($this->assetTab === 'activities')
-                                            <flux:input wire:model="assetEditForm.area" :label="__('Area')" />
-                                            <div class="grid grid-cols-2 gap-3">
-                                                <flux:input wire:model="assetEditForm.rain_fit" :label="__('Rain fit')" />
-                                                <flux:input wire:model="assetEditForm.age_fit" :label="__('Kid fit')" />
-                                            </div>
-                                            <flux:input wire:model="assetEditForm.prebooking_status" :label="__('Prebooking')" />
-                                            <flux:input wire:model="assetEditForm.reservation_url" :label="__('Reservation URL')" type="url" />
-                                        @elseif ($this->assetTab === 'food')
-                                            <flux:input wire:model="assetEditForm.area" :label="__('Area')" />
-                                            <div class="grid grid-cols-2 gap-3">
-                                                <flux:input wire:model="assetEditForm.default_meal_type" :label="__('Meal type')" />
-                                                <flux:input wire:model="assetEditForm.fallback_type" :label="__('Fallback')" />
-                                            </div>
-                                        @endif
-
-                                        <div class="grid grid-cols-2 gap-3">
-                                            <flux:input wire:model="assetEditForm.latitude" :label="__('Latitude')" type="number" step="0.0000001" />
-                                            <flux:input wire:model="assetEditForm.longitude" :label="__('Longitude')" type="number" step="0.0000001" />
-                                        </div>
-                                    @endif
-
-                                    <div class="grid grid-cols-2 gap-3">
-                                        <flux:input wire:model="assetEditForm.price_min_nok" :label="__('Min NOK')" type="number" />
-                                        <flux:input wire:model="assetEditForm.price_max_nok" :label="__('Max NOK')" type="number" />
-                                        <flux:input wire:model="assetEditForm.price_min_jpy" :label="__('Min JPY')" type="number" />
-                                        <flux:input wire:model="assetEditForm.price_max_jpy" :label="__('Max JPY')" type="number" />
-                                    </div>
-                                    <flux:input wire:model="assetEditForm.price_basis" :label="__('Price basis')" placeholder="per night, per person, estimate" />
-                                    <flux:textarea wire:model="assetEditForm.price_notes" :label="__('Price notes')" rows="2" />
-                                    <flux:textarea wire:model="assetEditForm.notes" :label="__('Notes')" rows="4" />
-                                    <flux:button type="submit" variant="primary" icon="check">{{ __('Save asset') }}</flux:button>
-                                </form>
-
-                                <form wire:submit="attachAssetToSelectedDay" class="mt-4 space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
-                                    <div>
-                                        <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Add to selected day') }}</div>
-                                        <div class="mt-1 text-sm text-zinc-500">
-                                            {{ $this->selectedDay ? __('Day :day · :title', ['day' => $this->selectedDay->day_number, 'title' => $this->selectedDay->title]) : __('Select a day first.') }}
+                                        <div class="flex flex-wrap gap-2 sm:justify-end">
+                                            <flux:modal.trigger name="edit-asset">
+                                                <flux:button size="sm" icon="pencil-square">{{ __('Edit') }}</flux:button>
+                                            </flux:modal.trigger>
+                                            <flux:modal.trigger name="attach-asset">
+                                                <flux:button size="sm" icon="plus" :disabled="! $this->selectedDay">{{ __('Attach') }}</flux:button>
+                                            </flux:modal.trigger>
                                         </div>
                                     </div>
 
-                                    <flux:input wire:model="assetAttachForm.time_label" :label="__('Time label')" placeholder="morning, lunch, arrival night" />
-                                    <flux:input wire:model="assetAttachForm.title" :label="__('Timeline title')" />
-                                    <flux:textarea wire:model="assetAttachForm.summary" :label="__('Traveler note')" rows="3" />
-                                    <flux:checkbox wire:model="assetAttachForm.is_public" :label="__('Show publicly')" />
-                                    <flux:button type="submit" icon="plus" :disabled="! $this->selectedDay">{{ __('Attach to day') }}</flux:button>
-                                </form>
+                                    <div class="mt-4 flex flex-wrap gap-2">
+                                        @forelse ($this->assetQualityFlags($this->selectedAsset) as $flag)
+                                            <flux:badge size="sm" color="amber">{{ $flag }}</flux:badge>
+                                        @empty
+                                            <flux:badge size="sm" color="green">{{ __('Ready') }}</flux:badge>
+                                        @endforelse
+                                    </div>
+                                </div>
 
                                 <div class="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
                                     <div class="flex items-center justify-between gap-3">
@@ -3146,6 +3229,99 @@ new #[Title('Manage trips')] class extends Component {
                                         @endforelse
                                     </div>
                                 </div>
+
+                                <flux:modal name="edit-asset" class="md:w-[42rem]">
+                                    <form wire:submit="updateAsset" class="space-y-4">
+                                        <div>
+                                            <flux:heading size="lg">{{ __('Edit shared asset') }}</flux:heading>
+                                            <flux:text class="mt-2">{{ $this->assetLabel($this->selectedAsset) }}</flux:text>
+                                        </div>
+
+                                        @if ($this->assetTab === 'transport')
+                                            <flux:input wire:model="assetEditForm.route_label" :label="__('Route label')" />
+                                            <div class="grid gap-3 sm:grid-cols-2">
+                                                <flux:input wire:model="assetEditForm.mode" :label="__('Mode')" />
+                                                <flux:input wire:model="assetEditForm.operator" :label="__('Operator')" />
+                                            </div>
+                                            <flux:input wire:model="assetEditForm.origin" :label="__('Origin')" />
+                                            <flux:input wire:model="assetEditForm.destination" :label="__('Destination')" />
+                                            <flux:input wire:model="assetEditForm.duration_label" :label="__('Duration')" />
+                                            <flux:input wire:model="assetEditForm.reservation_url" :label="__('Reservation URL')" type="url" />
+                                        @else
+                                            <flux:input wire:model="assetEditForm.name" :label="__('Name')" />
+                                            <div class="grid gap-3 sm:grid-cols-2">
+                                                <flux:input wire:model="assetEditForm.city" :label="__('City')" />
+                                                <flux:input wire:model="assetEditForm.country" :label="__('Country')" />
+                                            </div>
+
+                                            @if ($this->assetTab === 'accommodations')
+                                                <flux:input wire:model="assetEditForm.neighborhood" :label="__('Neighborhood')" />
+                                                <flux:input wire:model="assetEditForm.breakfast_note" :label="__('Breakfast note')" />
+                                                <flux:input wire:model="assetEditForm.dinner_note" :label="__('Dinner note')" />
+                                                <flux:input wire:model="assetEditForm.reservation_url" :label="__('Reservation URL')" type="url" />
+                                            @elseif ($this->assetTab === 'activities')
+                                                <flux:input wire:model="assetEditForm.area" :label="__('Area')" />
+                                                <div class="grid gap-3 sm:grid-cols-2">
+                                                    <flux:input wire:model="assetEditForm.rain_fit" :label="__('Rain fit')" />
+                                                    <flux:input wire:model="assetEditForm.age_fit" :label="__('Kid fit')" />
+                                                </div>
+                                                <flux:input wire:model="assetEditForm.prebooking_status" :label="__('Prebooking')" />
+                                                <flux:input wire:model="assetEditForm.reservation_url" :label="__('Reservation URL')" type="url" />
+                                            @elseif ($this->assetTab === 'food')
+                                                <flux:input wire:model="assetEditForm.area" :label="__('Area')" />
+                                                <div class="grid gap-3 sm:grid-cols-2">
+                                                    <flux:input wire:model="assetEditForm.default_meal_type" :label="__('Meal type')" />
+                                                    <flux:input wire:model="assetEditForm.fallback_type" :label="__('Fallback')" />
+                                                </div>
+                                            @endif
+
+                                            <div class="grid gap-3 sm:grid-cols-2">
+                                                <flux:input wire:model="assetEditForm.latitude" :label="__('Latitude')" type="number" step="0.0000001" />
+                                                <flux:input wire:model="assetEditForm.longitude" :label="__('Longitude')" type="number" step="0.0000001" />
+                                            </div>
+                                        @endif
+
+                                        <div class="grid gap-3 sm:grid-cols-2">
+                                            <flux:input wire:model="assetEditForm.price_min_nok" :label="__('Min NOK')" type="number" />
+                                            <flux:input wire:model="assetEditForm.price_max_nok" :label="__('Max NOK')" type="number" />
+                                            <flux:input wire:model="assetEditForm.price_min_jpy" :label="__('Min JPY')" type="number" />
+                                            <flux:input wire:model="assetEditForm.price_max_jpy" :label="__('Max JPY')" type="number" />
+                                        </div>
+                                        <flux:input wire:model="assetEditForm.price_basis" :label="__('Price basis')" placeholder="per night, per person, estimate" />
+                                        <flux:textarea wire:model="assetEditForm.price_notes" :label="__('Price notes')" rows="2" />
+                                        <flux:textarea wire:model="assetEditForm.notes" :label="__('Notes')" rows="4" />
+
+                                        <div class="flex justify-end gap-2">
+                                            <flux:modal.close>
+                                                <flux:button type="button">{{ __('Cancel') }}</flux:button>
+                                            </flux:modal.close>
+                                            <flux:button type="submit" variant="primary" icon="check">{{ __('Save asset') }}</flux:button>
+                                        </div>
+                                    </form>
+                                </flux:modal>
+
+                                <flux:modal name="attach-asset" class="md:w-[34rem]">
+                                    <form wire:submit="attachAssetToSelectedDay" class="space-y-4">
+                                        <div>
+                                            <flux:heading size="lg">{{ __('Add to selected day') }}</flux:heading>
+                                            <flux:text class="mt-2">
+                                                {{ $this->selectedDay ? __('Day :day · :title', ['day' => $this->selectedDay->day_number, 'title' => $this->selectedDay->title]) : __('Select a day first.') }}
+                                            </flux:text>
+                                        </div>
+
+                                        <flux:input wire:model="assetAttachForm.time_label" :label="__('Time label')" placeholder="morning, lunch, arrival night" />
+                                        <flux:input wire:model="assetAttachForm.title" :label="__('Timeline title')" />
+                                        <flux:textarea wire:model="assetAttachForm.summary" :label="__('Traveler note')" rows="3" />
+                                        <flux:checkbox wire:model="assetAttachForm.is_public" :label="__('Show publicly')" />
+
+                                        <div class="flex justify-end gap-2">
+                                            <flux:modal.close>
+                                                <flux:button type="button">{{ __('Cancel') }}</flux:button>
+                                            </flux:modal.close>
+                                            <flux:button type="submit" variant="primary" icon="plus" :disabled="! $this->selectedDay">{{ __('Attach to day') }}</flux:button>
+                                        </div>
+                                    </form>
+                                </flux:modal>
                             @else
                                 <div class="rounded-lg border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700">
                                     {{ __('Select a shared asset to fill coordinates, traveler notes, URLs, and type-specific planning details.') }}

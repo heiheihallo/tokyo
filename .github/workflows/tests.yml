@@ -10,6 +10,35 @@ permissions:
   pull-requests: write
 
 jobs:
+  quality:
+    runs-on: ubuntu-latest
+    environment: Testing
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Add Flux Credentials Loaded From ENV
+        run: composer config http-basic.composer.fluxui.dev "${{ secrets.FLUX_USERNAME }}" "${{ secrets.FLUX_LICENSE_KEY }}"
+
+      - name: Install Dependencies
+        run: |
+          composer install -q --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
+          npm install
+
+      - name: Run Pint
+        run: composer lint:check
+
   ci:
     runs-on: ubuntu-latest
     environment: Testing
@@ -62,7 +91,10 @@ jobs:
 
   create-pr:
     runs-on: ubuntu-latest
-    needs: ci
+    needs:
+      - quality
+      - ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
 
     steps:
       - name: Create pull request to main
