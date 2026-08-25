@@ -521,10 +521,12 @@ test('trip management can create update publish and unpublish journal entries', 
     $slot = $day->itineraryItems()->firstOrFail();
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->set('selectedTripId', $trip->id)
-        ->set('selectedVariantId', $variant->id)
-        ->set('activeManageTab', 'journal')
+        ->test('pages::trips.manage.journal-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+            'selectedDayId' => $day->id,
+            'selectedSlotId' => $slot->id,
+        ])
         ->set('journalForm.title', 'First trip journal note')
         ->set('journalForm.excerpt', 'Short traveler update.')
         ->set('journalForm.body', 'Longer journal body for the day.')
@@ -558,9 +560,12 @@ test('trip management can create update publish and unpublish journal entries', 
         ->and($entry->metadata)->toMatchArray(['weather' => 'humid', 'mood' => 'excited']);
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->set('selectedTripId', $trip->id)
-        ->set('activeManageTab', 'journal')
+        ->test('pages::trips.manage.journal-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+            'selectedDayId' => $day->id,
+            'selectedJournalEntryId' => $entry->id,
+        ])
         ->call('selectJournalEntry', $entry->id)
         ->call('unpublishJournalEntry')
         ->assertHasNoErrors();
@@ -587,9 +592,12 @@ test('trip management can upload journal media with private default visibility',
     $upload = UploadedFile::fake()->image('journal.png', 2, 2);
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->set('selectedTripId', $trip->id)
-        ->set('activeManageTab', 'journal')
+        ->test('pages::trips.manage.journal-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+            'selectedDayId' => $day->id,
+            'selectedJournalEntryId' => $entry->id,
+        ])
         ->call('selectJournalEntry', $entry->id)
         ->set('journalMediaUpload', $upload)
         ->set('journalMediaForm.caption', 'Hotel lobby arrival')
@@ -768,13 +776,22 @@ test('trip management connects selected day workspace and journal quality checks
         ->test('pages::trips.manage', ['selectedTripId' => $trip->id])
         ->call('selectTripContext', $trip->id, $variant->id)
         ->call('startDayJournalFromTimeline', $day->id)
-        ->assertSet('journalForm.title', 'Day 4 update')
-        ->assertSet('journalForm.day_node_id', (string) $day->id)
+        ->assertSet('activeManageTab', 'journal')
+        ->assertSet('selectedDayId', $day->id)
         ->call('openPlanningIssueTarget', [
             'target_type' => 'journal',
             'journal_entry_id' => $entry->id,
         ])
         ->assertSet('selectedJournalEntryId', $entry->id);
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage.journal-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+            'selectedDayId' => $day->id,
+        ])
+        ->assertSet('journalForm.title', 'Day 4 update')
+        ->assertSet('journalForm.day_node_id', (string) $day->id);
 
     Livewire::actingAs($user)
         ->test('pages::trips.manage.planning-panel', [
@@ -821,6 +838,17 @@ test('trip management day workspace creates quick slots and slot journal drafts'
         ->test('pages::trips.manage', ['selectedTripId' => $trip->id])
         ->call('selectTripContext', $trip->id, $variant->id)
         ->call('startSlotJournalFromTimeline', $day->id, $slot->id)
+        ->assertSet('activeManageTab', 'journal')
+        ->assertSet('selectedDayId', $day->id)
+        ->assertSet('selectedSlotId', $slot->id);
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage.journal-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+            'selectedDayId' => $day->id,
+            'selectedSlotId' => $slot->id,
+        ])
         ->assertSet('journalForm.title', 'Flexible buffer update')
         ->assertSet('journalForm.day_itinerary_item_id', (string) $slot->id)
         ->set('journalForm.body', 'Family-safe slot update.')
