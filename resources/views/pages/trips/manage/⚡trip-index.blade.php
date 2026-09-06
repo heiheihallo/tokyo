@@ -121,24 +121,25 @@ new class extends Component {
     }
 }; ?>
 
-<flux:card>
+<flux:card class="shadow-sm">
     <div class="flex items-start justify-between gap-3">
         <div>
             <flux:heading>{{ __('Trips') }}</flux:heading>
-            <flux:text>{{ __('Pick a trip, then work inside focused tabs.') }}</flux:text>
+            <flux:text>{{ __('Choose a trip and its working timeline.') }}</flux:text>
         </div>
         <flux:modal.trigger name="create-trip">
-            <flux:button size="sm" icon="plus">{{ __('Trip') }}</flux:button>
+            <flux:button size="sm" icon="plus" aria-label="{{ __('Create trip') }}">{{ __('Trip') }}</flux:button>
         </flux:modal.trigger>
     </div>
 
-    <div class="mt-4 space-y-3">
+    <div class="mt-4 space-y-1" aria-label="{{ __('Trip list') }}">
         @forelse ($this->trips as $trip)
             <button
                 type="button"
                 wire:key="trip-index-{{ $trip->id }}"
                 wire:click="$set('selectedTripId', {{ $trip->id }})"
-                class="block w-full rounded-lg border p-3 text-left transition hover:border-teal-600 {{ $this->selectedTripId === $trip->id ? 'border-teal-700 bg-teal-50 dark:border-teal-300 dark:bg-teal-950/40' : 'border-zinc-200 dark:border-zinc-700' }}"
+                @if ($this->selectedTripId === $trip->id) aria-current="true" @endif
+                class="block w-full rounded-lg p-3 text-left transition duration-150 ease-out active:scale-[0.99] motion-reduce:transform-none motion-reduce:transition-none {{ $this->selectedTripId === $trip->id ? 'bg-teal-50 ring-1 ring-inset ring-teal-700 dark:bg-teal-950/40 dark:ring-teal-300' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/70' }}"
             >
                 <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0">
@@ -161,19 +162,23 @@ new class extends Component {
         <flux:separator class="my-5" />
 
         <div class="flex items-center justify-between gap-3">
-            <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Timelines') }}</div>
+            <div>
+                <div class="text-sm font-semibold text-zinc-950 dark:text-white">{{ __('Timelines') }}</div>
+                <div class="mt-1 text-xs text-zinc-500">{{ __('Route options for :trip', ['trip' => $this->selectedTrip->name]) }}</div>
+            </div>
             <flux:modal.trigger name="create-timeline">
-                <flux:button size="sm" icon="plus">{{ __('Timeline') }}</flux:button>
+                <flux:button size="sm" icon="plus" aria-label="{{ __('Create timeline') }}">{{ __('Timeline') }}</flux:button>
             </flux:modal.trigger>
         </div>
 
-        <div class="mt-3 space-y-2">
+        <div class="mt-3 space-y-1" aria-label="{{ __('Timeline list') }}">
             @forelse ($this->variants as $variant)
                 <button
                     type="button"
                     wire:key="timeline-index-{{ $variant->id }}"
                     wire:click="$set('selectedVariantId', {{ $variant->id }})"
-                    class="block w-full rounded-lg border px-3 py-2 text-left text-sm transition hover:border-teal-600 {{ $this->selectedVariantId === $variant->id ? 'border-teal-700 bg-teal-50 dark:border-teal-300 dark:bg-teal-950/40' : 'border-zinc-200 dark:border-zinc-700' }}"
+                    @if ($this->selectedVariantId === $variant->id) aria-current="true" @endif
+                    class="block w-full rounded-lg px-3 py-2.5 text-left text-sm transition duration-150 ease-out active:scale-[0.99] motion-reduce:transform-none motion-reduce:transition-none {{ $this->selectedVariantId === $variant->id ? 'bg-teal-50 ring-1 ring-inset ring-teal-700 dark:bg-teal-950/40 dark:ring-teal-300' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/70' }}"
                 >
                     <div class="flex items-center justify-between gap-3">
                         <div class="min-w-0">

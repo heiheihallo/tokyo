@@ -264,25 +264,27 @@ new #[Title('Tokyo Trip Planner')] class extends Component {
     }
 }; ?>
 
-<section class="flex h-full w-full flex-1 flex-col gap-4">
-        <div class="sticky top-0 z-10 py-3 backdrop-blur">
+<section class="mx-auto flex h-full w-full max-w-[1400px] flex-1 flex-col gap-6">
+        <div class="sticky top-0 z-10 py-3">
             @if ($this->trips->isNotEmpty())
-                <div class="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
-                    <flux:select wire:model.live="tripSlug" :label="__('Trip')">
-                        @foreach ($this->trips as $trip)
-                            <flux:select.option value="{{ $trip->slug }}">{{ $trip->name }}</flux:select.option>
-                        @endforeach
-                    </flux:select>
+                <div class="rounded-lg border border-zinc-200 bg-white/95 p-3 shadow-sm backdrop-blur-xl dark:border-zinc-700 dark:bg-zinc-900/95 motion-reduce:backdrop-blur-none">
+                    <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
+                        <flux:select wire:model.live="tripSlug" :label="__('Trip')">
+                            @foreach ($this->trips as $trip)
+                                <flux:select.option value="{{ $trip->slug }}">{{ $trip->name }}</flux:select.option>
+                            @endforeach
+                        </flux:select>
 
-                    <flux:select wire:model.live="variantSlug" :label="__('Timeline')">
-                        @foreach ($this->variants as $variant)
-                            <flux:select.option value="{{ $variant->slug }}">{{ $variant->name }}</flux:select.option>
-                        @endforeach
-                    </flux:select>
+                        <flux:select wire:model.live="variantSlug" :label="__('Timeline')">
+                            @foreach ($this->variants as $variant)
+                                <flux:select.option value="{{ $variant->slug }}">{{ $variant->name }}</flux:select.option>
+                            @endforeach
+                        </flux:select>
 
-                    <flux:modal.trigger name="planner-filters">
-                        <flux:button class="w-full lg:w-auto" icon="funnel">{{ __('Advanced filters') }}</flux:button>
-                    </flux:modal.trigger>
+                        <flux:modal.trigger name="planner-filters">
+                            <flux:button class="w-full lg:w-auto" icon="funnel">{{ __('Filters') }}</flux:button>
+                        </flux:modal.trigger>
+                    </div>
                 </div>
 
                 <flux:modal name="planner-filters" flyout variant="floating" class="md:w-96">
@@ -318,30 +320,31 @@ new #[Title('Tokyo Trip Planner')] class extends Component {
                 </flux:modal>
             @endif
 
-            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
+            <div class="mt-5 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                <div class="min-w-0">
+                    <div class="text-sm font-medium text-zinc-500">{{ __('Planning workspace') }}</div>
                     <flux:heading size="xl">{{ $this->trip?->name ?? __('Trip planner') }}</flux:heading>
                     <flux:text size="sm" class="mt-1 max-w-3xl">{{ $this->trip?->summary ?? __('Import or create a trip to start planning timelines.') }}</flux:text>
                 </div>
 
-                <div class="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
-                    <div class="rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
-                        <div class="text-zinc-500">{{ __('Nights') }}</div>
-                        <div class="font-semibold">{{ $this->totals['nights'] }}</div>
+                <dl class="grid grid-cols-2 gap-x-6 gap-y-4 text-sm sm:grid-cols-4 lg:shrink-0">
+                    <div>
+                        <dt class="text-zinc-500">{{ __('Nights') }}</dt>
+                        <dd class="mt-1 font-semibold tabular-nums text-zinc-950 dark:text-white">{{ $this->totals['nights'] }}</dd>
                     </div>
-                    <div class="rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
-                        <div class="text-zinc-500">{{ __('Modeled cost') }}</div>
-                        <div class="font-semibold">{{ number_format($this->totals['min'], 0, '.', ' ') }} - {{ number_format($this->totals['max'], 0, '.', ' ') }} NOK</div>
+                    <div>
+                        <dt class="text-zinc-500">{{ __('Modeled cost') }}</dt>
+                        <dd class="mt-1 font-semibold tabular-nums text-zinc-950 dark:text-white">{{ number_format($this->totals['min'], 0, '.', ' ') }} - {{ number_format($this->totals['max'], 0, '.', ' ') }} NOK</dd>
                     </div>
-                    <div class="rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
-                        <div class="text-zinc-500">{{ __('Booked') }}</div>
-                        <div class="font-semibold">{{ $this->totals['booked'] }} / {{ $this->totals['booked'] + $this->totals['unbooked'] }}</div>
+                    <div>
+                        <dt class="text-zinc-500">{{ __('Booked') }}</dt>
+                        <dd class="mt-1 font-semibold tabular-nums text-zinc-950 dark:text-white">{{ $this->totals['booked'] }} / {{ $this->totals['booked'] + $this->totals['unbooked'] }}</dd>
                     </div>
-                    <div class="rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
-                        <div class="text-zinc-500">{{ __('Next') }}</div>
-                        <div class="max-w-40 truncate font-semibold">{{ $this->totals['next_priority'] }}</div>
+                    <div class="min-w-0">
+                        <dt class="text-zinc-500">{{ __('Next') }}</dt>
+                        <dd class="mt-1 max-w-48 truncate font-semibold text-zinc-950 dark:text-white">{{ $this->totals['next_priority'] }}</dd>
                     </div>
-                </div>
+                </dl>
             </div>
         </div>
 
