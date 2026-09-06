@@ -282,7 +282,7 @@ new #[Title('Tokyo Trip Planner')] class extends Component {
                         </flux:select>
 
                         <flux:modal.trigger name="planner-filters">
-                            <flux:button class="w-full lg:w-auto" icon="funnel">{{ __('Filters') }}</flux:button>
+                            <flux:button class="w-full lg:w-auto" icon="funnel">{{ __('Advanced filters') }}</flux:button>
                         </flux:modal.trigger>
                     </div>
                 </div>
