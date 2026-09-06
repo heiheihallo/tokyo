@@ -28,6 +28,7 @@ test('authenticated users can view the planner shell', function () {
 
     $this->get(route('dashboard'))
         ->assertOk()
+        ->assertSee('Planning workspace')
         ->assertSee('Advanced filters');
 });
 
