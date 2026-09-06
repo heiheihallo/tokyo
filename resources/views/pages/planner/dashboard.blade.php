@@ -265,7 +265,7 @@ new #[Title('Tokyo Trip Planner')] class extends Component {
 }; ?>
 
 <section class="mx-auto flex h-full w-full max-w-[1400px] flex-1 flex-col gap-6">
-        <div class="sticky top-0 z-10 py-3">
+        <div class="py-3">
             @if ($this->trips->isNotEmpty())
                 <div class="rounded-lg border border-zinc-200 bg-white/95 p-3 shadow-sm backdrop-blur-xl dark:border-zinc-700 dark:bg-zinc-900/95 motion-reduce:backdrop-blur-none">
                     <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
@@ -320,14 +320,14 @@ new #[Title('Tokyo Trip Planner')] class extends Component {
                 </flux:modal>
             @endif
 
-            <div class="mt-5 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div class="mt-5 space-y-5">
                 <div class="min-w-0">
                     <div class="text-sm font-medium text-zinc-500">{{ __('Planning workspace') }}</div>
                     <flux:heading size="xl">{{ $this->trip?->name ?? __('Trip planner') }}</flux:heading>
                     <flux:text size="sm" class="mt-1 max-w-3xl">{{ $this->trip?->summary ?? __('Import or create a trip to start planning timelines.') }}</flux:text>
                 </div>
 
-                <dl class="grid grid-cols-2 gap-x-6 gap-y-4 text-sm sm:grid-cols-4 lg:shrink-0">
+                <dl class="grid grid-cols-2 gap-x-6 gap-y-4 border-y border-zinc-200 py-4 text-sm sm:grid-cols-4 dark:border-zinc-700">
                     <div>
                         <dt class="text-zinc-500">{{ __('Nights') }}</dt>
                         <dd class="mt-1 font-semibold tabular-nums text-zinc-950 dark:text-white">{{ $this->totals['nights'] }}</dd>
