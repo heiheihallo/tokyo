@@ -151,10 +151,15 @@ test('trip management can persist selected day edits', function () {
 
     $user = User::factory()->create();
     $day = DayNode::query()->where('stable_key', 'day-6')->firstOrFail();
+    $variant = $day->variant;
+    $trip = $variant->trip;
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->call('selectDay', $day->id)
+        ->test('pages::trips.manage.timeline-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+            'selectedDayId' => $day->id,
+        ])
         ->set('dayForm.title', 'teamLab with Toyosu lunch buffer')
         ->set('dayForm.location', 'Tokyo / Toyosu')
         ->set('dayForm.booking_priority', 'medium')
@@ -184,18 +189,30 @@ test('trip management exposes modal triggers for editing workflows', function ()
     Livewire::actingAs($user)
         ->test('pages::trips.manage')
         ->call('selectDay', $day->id)
-        ->call('selectAsset', $hotel->id)
         ->assertSee('Manage trips')
         ->assertSee('Timeline')
         ->assertSee('Assets')
         ->assertSee('Journal')
         ->assertSee('Planning')
-        ->assertSee('Publishing')
+        ->assertSee('Publishing');
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage.timeline-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+            'selectedDayId' => $day->id,
+        ])
         ->assertSee('Edit day')
         ->assertSee('Slot')
         ->assertSee('Task')
-        ->assertDontSee('Shared assets')
-        ->set('activeManageTab', 'assets')
+        ->assertDontSee('Shared assets');
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage.assets-panel', [
+            'selectedDayId' => $day->id,
+            'selectedAssetId' => $hotel->id,
+            'assetTab' => 'accommodations',
+        ])
         ->assertSee('Shared assets')
         ->assertSee('Asset')
         ->assertSee('Attach');
@@ -504,10 +521,12 @@ test('trip management can create update publish and unpublish journal entries', 
     $slot = $day->itineraryItems()->firstOrFail();
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->set('selectedTripId', $trip->id)
-        ->set('selectedVariantId', $variant->id)
-        ->set('activeManageTab', 'journal')
+        ->test('pages::trips.manage.journal-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+            'selectedDayId' => $day->id,
+            'selectedSlotId' => $slot->id,
+        ])
         ->set('journalForm.title', 'First trip journal note')
         ->set('journalForm.excerpt', 'Short traveler update.')
         ->set('journalForm.body', 'Longer journal body for the day.')
@@ -541,9 +560,12 @@ test('trip management can create update publish and unpublish journal entries', 
         ->and($entry->metadata)->toMatchArray(['weather' => 'humid', 'mood' => 'excited']);
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->set('selectedTripId', $trip->id)
-        ->set('activeManageTab', 'journal')
+        ->test('pages::trips.manage.journal-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+            'selectedDayId' => $day->id,
+            'selectedJournalEntryId' => $entry->id,
+        ])
         ->call('selectJournalEntry', $entry->id)
         ->call('unpublishJournalEntry')
         ->assertHasNoErrors();
@@ -570,9 +592,12 @@ test('trip management can upload journal media with private default visibility',
     $upload = UploadedFile::fake()->image('journal.png', 2, 2);
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->set('selectedTripId', $trip->id)
-        ->set('activeManageTab', 'journal')
+        ->test('pages::trips.manage.journal-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+            'selectedDayId' => $day->id,
+            'selectedJournalEntryId' => $entry->id,
+        ])
         ->call('selectJournalEntry', $entry->id)
         ->set('journalMediaUpload', $upload)
         ->set('journalMediaForm.caption', 'Hotel lobby arrival')
@@ -736,21 +761,47 @@ test('trip management connects selected day workspace and journal quality checks
     ]);
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->set('selectedTripId', $trip->id)
-        ->set('selectedVariantId', $variant->id)
-        ->call('selectDay', $day->id)
+        ->test('pages::trips.manage.timeline-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+            'selectedDayId' => $day->id,
+        ])
         ->assertSee('Day workspace')
         ->assertSee('Preview day')
         ->assertSee('Journal coverage')
         ->call('startJournalForSelectedDay')
+        ->assertDispatched('trip-management-start-day-journal');
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage', ['selectedTripId' => $trip->id])
+        ->call('selectTripContext', $trip->id, $variant->id)
+        ->call('startDayJournalFromTimeline', $day->id)
+        ->assertSet('activeManageTab', 'journal')
+        ->assertSet('selectedDayId', $day->id)
+        ->call('openPlanningIssueTarget', [
+            'target_type' => 'journal',
+            'journal_entry_id' => $entry->id,
+        ])
+        ->assertSet('selectedJournalEntryId', $entry->id);
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage.journal-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+            'selectedDayId' => $day->id,
+        ])
         ->assertSet('journalForm.title', 'Day 4 update')
-        ->assertSet('journalForm.day_node_id', (string) $day->id)
-        ->set('activeManageTab', 'planning')
+        ->assertSet('journalForm.day_node_id', (string) $day->id);
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage.planning-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+        ])
         ->set('planningCategoryFilter', 'journal')
         ->assertSee('Published journal entry has no traveler detail')
         ->call('openPlanningIssue', 'journal-empty-'.$entry->id)
-        ->assertSet('selectedJournalEntryId', $entry->id);
+        ->assertDispatched('trip-management-open-planning-issue');
 });
 
 test('trip management day workspace creates quick slots and slot journal drafts', function () {
@@ -762,10 +813,11 @@ test('trip management day workspace creates quick slots and slot journal drafts'
     $day = $variant->dayNodes()->where('stable_key', 'day-4')->firstOrFail();
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->set('selectedTripId', $trip->id)
-        ->set('selectedVariantId', $variant->id)
-        ->call('selectDay', $day->id)
+        ->test('pages::trips.manage.timeline-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+            'selectedDayId' => $day->id,
+        ])
         ->assertSee('Day board')
         ->call('createQuickDaySlot', 'buffer')
         ->assertHasNoErrors()
@@ -774,11 +826,29 @@ test('trip management day workspace creates quick slots and slot journal drafts'
     $slot = $day->itineraryItems()->where('title', 'Flexible buffer')->firstOrFail();
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->set('selectedTripId', $trip->id)
-        ->set('selectedVariantId', $variant->id)
-        ->call('selectDay', $day->id)
+        ->test('pages::trips.manage.timeline-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+            'selectedDayId' => $day->id,
+        ])
         ->call('startJournalForSelectedSlot', $slot->id)
+        ->assertDispatched('trip-management-start-slot-journal');
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage', ['selectedTripId' => $trip->id])
+        ->call('selectTripContext', $trip->id, $variant->id)
+        ->call('startSlotJournalFromTimeline', $day->id, $slot->id)
+        ->assertSet('activeManageTab', 'journal')
+        ->assertSet('selectedDayId', $day->id)
+        ->assertSet('selectedSlotId', $slot->id);
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage.journal-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+            'selectedDayId' => $day->id,
+            'selectedSlotId' => $slot->id,
+        ])
         ->assertSet('journalForm.title', 'Flexible buffer update')
         ->assertSet('journalForm.day_itinerary_item_id', (string) $slot->id)
         ->set('journalForm.body', 'Family-safe slot update.')
@@ -990,8 +1060,11 @@ test('trip management can create typed day slots and tasks', function () {
         ->firstOrFail();
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->call('selectDay', $day->id)
+        ->test('pages::trips.manage.timeline-panel', [
+            'selectedTripId' => $day->trip_id,
+            'selectedVariantId' => $day->trip_variant_id,
+            'selectedDayId' => $day->id,
+        ])
         ->set('slotForm.item_type', 'move')
         ->set('slotForm.time_label', '10:15')
         ->set('slotForm.title', 'Leave for Toyosu')
@@ -1042,8 +1115,11 @@ test('trip management can edit toggle and reorder day slots', function () {
     ]);
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->call('selectDay', $day->id)
+        ->test('pages::trips.manage.timeline-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+            'selectedDayId' => $day->id,
+        ])
         ->call('selectSlot', $firstSlot->id)
         ->set('slotEditForm.item_type', 'food')
         ->set('slotEditForm.time_label', 'lunch anchor')
@@ -1107,8 +1183,10 @@ test('trip management can search and edit shared assets', function () {
     ]);
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->set('activeManageTab', 'assets')
+        ->test('pages::trips.manage.assets-panel', [
+            'selectedDayId' => $day->id,
+            'assetTab' => 'accommodations',
+        ])
         ->set('assetSearch', 'Mets')
         ->assertSee('JR East Hotel Mets Premier Akihabara')
         ->call('selectAsset', $hotel->id)
@@ -1171,10 +1249,10 @@ test('trip management can attach and detach shared assets from the selected day'
     $foodSpot = FoodSpot::query()->where('stable_key', 'tokyo-ramen-street')->firstOrFail();
 
     $component = Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->call('selectDay', $day->id)
-        ->set('activeManageTab', 'assets')
-        ->set('assetTab', 'food')
+        ->test('pages::trips.manage.assets-panel', [
+            'selectedDayId' => $day->id,
+            'assetTab' => 'food',
+        ])
         ->call('selectAsset', $foodSpot->id)
         ->set('assetAttachForm.time_label', 'lunch')
         ->set('assetAttachForm.title', 'Tokyo Station ramen day anchor')
@@ -1236,9 +1314,10 @@ test('trip management planning health detects gaps and opens targets', function 
     ]);
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->set('selectedVariantId', $variant->id)
-        ->set('activeManageTab', 'planning')
+        ->test('pages::trips.manage.planning-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+        ])
         ->assertSee('Planning health')
         ->assertSee('High-priority day is not booked')
         ->assertSee('Public slot is missing map coordinates')
@@ -1257,14 +1336,26 @@ test('trip management planning health detects gaps and opens targets', function 
         ->assertSee('Published day has no public slots')
         ->set('planningCategoryFilter', 'all')
         ->call('openPlanningIssue', 'slot-gap-'.$slot->id)
+        ->assertDispatched('trip-management-open-planning-issue');
+
+    Livewire::actingAs($user)
+        ->test('pages::trips.manage', ['selectedTripId' => $trip->id])
+        ->call('selectTripContext', $trip->id, $variant->id)
+        ->call('openPlanningIssueTarget', [
+            'target_type' => 'slot',
+            'day_id' => $day->id,
+            'slot_id' => $slot->id,
+        ])
         ->assertSet('selectedDayId', $day->id)
         ->assertSet('selectedSlotId', $slot->id)
-        ->set('activeManageTab', 'timeline')
-        ->assertSee('Planning health gap slot')
-        ->call('openPlanningIssue', 'asset-gap-accommodations-'.$asset->id)
+        ->assertSet('activeManageTab', 'timeline')
+        ->call('openPlanningIssueTarget', [
+            'target_type' => 'asset',
+            'asset_tab' => 'accommodations',
+            'asset_id' => $asset->id,
+        ])
         ->assertSet('assetTab', 'accommodations')
         ->assertSet('selectedAssetId', $asset->id)
-        ->set('activeManageTab', 'assets')
         ->assertSee('Edit shared asset');
 });
 
@@ -1358,10 +1449,10 @@ test('trip management planning health quick fixes safe issues', function () {
     ]);
 
     Livewire::actingAs($user)
-        ->test('pages::trips.manage')
-        ->set('selectedTripId', $trip->id)
-        ->set('selectedVariantId', $variant->id)
-        ->set('activeManageTab', 'planning')
+        ->test('pages::trips.manage.planning-panel', [
+            'selectedTripId' => $trip->id,
+            'selectedVariantId' => $variant->id,
+        ])
         ->assertSee('Planning health')
         ->call('quickFixPlanningIssue', 'day-high-unbooked-'.$day->id)
         ->call('quickFixPlanningIssue', 'slot-gap-'.$coordinateSlot->id)
