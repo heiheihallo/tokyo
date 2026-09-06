@@ -427,14 +427,15 @@ new #[Title('Manage trips')] class extends Component {
 
 }; ?>
 
-<section class="flex h-full w-full flex-1 flex-col gap-6">
-        <div>
+<section class="mx-auto flex h-full w-full max-w-[1600px] flex-1 flex-col gap-6">
+        <div class="max-w-3xl">
+            <div class="text-sm font-medium text-zinc-500">{{ __('Planning workspace') }}</div>
             <flux:heading size="xl">{{ __('Manage trips') }}</flux:heading>
-            <flux:text>{{ __('Create separate trips, compare timelines, edit day cards, and maintain shared hotels, activities, food spots, and transport assets.') }}</flux:text>
+            <flux:text>{{ __('Set the route, then work through its timeline, shared assets, journal, planning health, and traveler access.') }}</flux:text>
         </div>
 
-        <div class="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-            <div class="space-y-6">
+        <div class="grid gap-6 xl:grid-cols-[20rem_minmax(0,1fr)]">
+            <aside class="space-y-6 xl:sticky xl:top-4 xl:self-start">
                 <livewire:pages::trips.manage.trip-index
                     :selected-trip-id="$selectedTripId"
                     :selected-variant-id="$selectedVariantId"
@@ -445,12 +446,13 @@ new #[Title('Manage trips')] class extends Component {
                     :key="'loyalty-'.$selectedTripId"
                 />
 
-            </div>
+            </aside>
 
             <div class="space-y-6">
-                <flux:card>
+                <div class="rounded-lg border border-zinc-200 bg-white/95 p-4 shadow-sm backdrop-blur-xl dark:border-zinc-700 dark:bg-zinc-900/95 motion-reduce:backdrop-blur-none">
                     <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div class="min-w-0">
+                            <div class="text-sm font-medium text-zinc-500">{{ __('Current context') }}</div>
                             <flux:heading>{{ $this->selectedTrip?->name ?? __('No trip selected') }}</flux:heading>
                             <flux:text>
                                 {{ $this->selectedVariant ? __('Timeline: :name', ['name' => $this->selectedVariant->name]) : __('Choose a trip and timeline from the index.') }}
@@ -474,13 +476,13 @@ new #[Title('Manage trips')] class extends Component {
                     </div>
 
                     <flux:tabs class="mt-5" wire:model.live="activeManageTab">
-                        <flux:tab name="timeline">{{ __('Timeline') }}</flux:tab>
-                        <flux:tab name="assets">{{ __('Assets') }}</flux:tab>
-                        <flux:tab name="journal">{{ __('Journal') }}</flux:tab>
-                        <flux:tab name="planning">{{ __('Planning') }}</flux:tab>
-                        <flux:tab name="publishing">{{ __('Publishing') }}</flux:tab>
+                        <flux:tab name="timeline" icon="calendar-days">{{ __('Timeline') }}</flux:tab>
+                        <flux:tab name="assets" icon="squares-2x2">{{ __('Assets') }}</flux:tab>
+                        <flux:tab name="journal" icon="book-open">{{ __('Journal') }}</flux:tab>
+                        <flux:tab name="planning" icon="clipboard-document-check">{{ __('Planning') }}</flux:tab>
+                        <flux:tab name="publishing" icon="globe-alt">{{ __('Publishing') }}</flux:tab>
                     </flux:tabs>
-                </flux:card>
+                </div>
 
                 @if ($activeManageTab === 'publishing')
                     <livewire:pages::trips.manage.publishing-panel
